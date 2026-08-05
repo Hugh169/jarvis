@@ -1,0 +1,60 @@
+# XcodeGen manifest for the real app bundle. Regenerate with:
+#   xcodegen generate
+# (requires full Xcode selected: sudo xcode-select -s /Applications/Xcode.app)
+name: Jarvis
+options:
+  bundleIdPrefix: com.jarvis
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+
+packages:
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: 2.0.0
+  JarvisCore: { path: Packages/JarvisCore }
+  JarvisAudio: { path: Packages/JarvisAudio }
+  JarvisSpeech: { path: Packages/JarvisSpeech }
+  JarvisVoice: { path: Packages/JarvisVoice }
+  JarvisBrain: { path: Packages/JarvisBrain }
+  JarvisTools: { path: Packages/JarvisTools }
+  JarvisMemory: { path: Packages/JarvisMemory }
+
+targets:
+  Jarvis:
+    type: application
+    platform: macOS
+    sources:
+      - Jarvis
+    dependencies:
+      - package: KeyboardShortcuts
+      - package: JarvisCore
+      - package: JarvisAudio
+      - package: JarvisSpeech
+      - package: JarvisVoice
+      - package: JarvisBrain
+      - package: JarvisTools
+      - package: JarvisMemory
+    entitlements:
+      path: Jarvis.entitlements
+    info:
+      path: Jarvis/Info.plist
+      properties:
+        CFBundleDisplayName: JARVIS
+        LSUIElement: true
+        NSMicrophoneUsageDescription: JARVIS listens to you when you hold the push-to-talk key.
+        NSSpeechRecognitionUsageDescription: JARVIS transcribes your speech on-device.
+        NSCalendarsUsageDescription: JARVIS creates and reads calendar events for you.
+        NSRemindersUsageDescription: JARVIS creates and completes reminders for you.
+        NSContactsUsageDescription: JARVIS looks up contacts to send messages and email.
+        NSAppleEventsUsageDescription: JARVIS automates apps like Mail and Messages via AppleScript.
+    settings:
+      base:
+        # App Sandbox stays OFF (shell, automation, synthetic input are
+        # incompatible with it); Hardened Runtime ON with the entitlement
+        # exceptions in Jarvis.entitlements.
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: NO
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        CODE_SIGN_STYLE: Automatic
