@@ -12,6 +12,25 @@ final class AppState: ObservableObject {
 
     @Published private(set) var turnState: TurnState = .idle
 
+    // MARK: HUD content
+
+    /// What the user said — partial hypotheses while listening, final after.
+    @Published var transcript = ""
+    @Published var transcriptIsPartial = false
+    /// The spoken reply, accumulated as Claude streams.
+    @Published var replyText = ""
+    /// Markdown from the display_detail tool.
+    @Published var detailMarkdown: String?
+    @Published private(set) var activities: [ToolActivity] = []
+    @Published var pendingConfirmation: ConfirmationRequest?
+    /// Recent input RMS for the meter.
+    @Published var micLevels: [Float] = []
+    /// Reported by HUDView so the panel can resize from a fixed top edge.
+    @Published var hudContentHeight: CGFloat = 0
+
+    private var activityLog = ToolActivityLog()
+    private var confirmationHandler: ((Bool) -> Void)?
+
     private lazy var hud = HUDController(appState: self)
     private var stateTask: Task<Void, Never>?
 
@@ -33,9 +52,60 @@ final class AppState: ObservableObject {
         }
     }
 
+    // MARK: Tool activity
+
+    func beginActivity(toolName: String) -> UUID {
+        let descriptor = ToolPresentation.descriptor(for: toolName)
+        let activity = ToolActivity(
+            toolName: toolName,
+            title: descriptor.title,
+            bundleIdentifier: descriptor.bundleIdentifier,
+            symbolName: descriptor.symbolName
+        )
+        activityLog.begin(activity)
+        activities = activityLog.activities
+        return activity.id
+    }
+
+    func finishActivity(id: UUID, status: ToolActivity.Status) {
+        guard activityLog.finish(id: id, status: status) else { return }
+        activities = activityLog.activities
+    }
+
+    /// Presents a confirmation in the HUD and resumes when the user decides.
+    func requestConfirmation(_ request: ConfirmationRequest) async -> Bool {
+        await withCheckedContinuation { continuation in
+            pendingConfirmation = request
+            confirmationHandler = { approved in
+                continuation.resume(returning: approved)
+            }
+        }
+    }
+
+    func resolveConfirmation(approved: Bool) {
+        guard let handler = confirmationHandler else { return }
+        confirmationHandler = nil
+        pendingConfirmation = nil
+        handler(approved)
+    }
+
+    private func resetTurnContent() {
+        transcript = ""
+        transcriptIsPartial = false
+        replyText = ""
+        detailMarkdown = nil
+        micLevels = []
+        activityLog.clear()
+        activities = []
+        // A cancelled turn must not leave a caller suspended forever.
+        resolveConfirmation(approved: false)
+    }
+
     // MARK: Intents (called by HotkeyManager and UI)
 
     func beginListening() {
+        resetTurnContent()
+        transcriptIsPartial = true
         Task { await engine.handle(.listenStarted) }
     }
 
@@ -50,7 +120,7 @@ final class AppState: ObservableObject {
             if await engine.state == .listening {
                 await engine.handle(.cancelled)
             } else {
-                await engine.handle(.listenStarted)
+                beginListening()
             }
         }
     }
@@ -58,6 +128,7 @@ final class AppState: ObservableObject {
     /// Panic: cancel the in-flight turn, stop audio, kill running processes.
     /// Phase 1 only has the turn to cancel.
     func panic() {
+        resetTurnContent()
         Task { await engine.handle(.cancelled) }
     }
 }

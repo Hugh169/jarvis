@@ -1,0 +1,664 @@
+<title>JARVIS HUD</title>
+<style>
+  :root {
+    --page-bg: #EEF0F4;
+    --page-panel: #FFFFFF;
+    --page-ink: #171A21;
+    --page-ink-2: #5C6475;
+    --page-hairline: rgba(20, 24, 34, 0.12);
+
+    /* HUD tokens &mdash; fixed across themes by design (see note in the page). */
+    --hud-fill: rgba(20, 24, 33, 0.72);
+    --hud-hairline: rgba(255, 255, 255, 0.10);
+    --hud-inset: rgba(255, 255, 255, 0.05);
+    --ink: #EDEFF5;
+    --ink-2: #9AA3B5;
+    --ink-3: #69707F;
+    --brass: #E0A94A;
+    --alert: #E8695E;
+    --ok: #63C08C;
+
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+    --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+
+    --r-panel: 20px;
+    --r-chip: 9px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page-bg: #0C0E13;
+      --page-panel: #161A22;
+      --page-ink: #E6E9F0;
+      --page-ink-2: #8D95A6;
+      --page-hairline: rgba(255, 255, 255, 0.10);
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-bg: #0C0E13;
+    --page-panel: #161A22;
+    --page-ink: #E6E9F0;
+    --page-ink-2: #8D95A6;
+    --page-hairline: rgba(255, 255, 255, 0.10);
+  }
+  :root[data-theme="light"] {
+    --page-bg: #EEF0F4;
+    --page-panel: #FFFFFF;
+    --page-ink: #171A21;
+    --page-ink-2: #5C6475;
+    --page-hairline: rgba(20, 24, 34, 0.12);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: var(--ui);
+    background: var(--page-bg);
+    color: var(--page-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 32px 20px 64px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  header { display: flex; flex-direction: column; gap: 8px; }
+  h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  .sub { margin: 0; color: var(--page-ink-2); font-size: 14px; line-height: 1.5; max-width: 62ch; }
+
+  /* ---------- Desktop backdrop so translucency reads honestly ---------- */
+  .stage {
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid var(--page-hairline);
+    background:
+      radial-gradient(120% 90% at 18% 8%, #3C4A63 0%, transparent 55%),
+      radial-gradient(100% 80% at 88% 22%, #6A4C5A 0%, transparent 52%),
+      linear-gradient(168deg, #1B2130 0%, #0D1018 62%, #14181F 100%);
+    min-height: 460px;
+    padding: 22px 16px 40px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+  }
+  /* Faux window furniture behind the HUD, so the overlay has something to sit over. */
+  .stage::before {
+    content: "";
+    position: absolute;
+    inset: 54px 40px 30px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  /* ---------- The HUD ---------- */
+  .hud {
+    position: relative;
+    width: min(480px, 100%);
+    background: var(--hud-fill);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid var(--hud-hairline);
+    border-radius: var(--r-panel);
+    box-shadow:
+      0 24px 60px rgba(0, 0, 0, 0.45),
+      inset 0 1px 0 var(--hud-inset);
+    color: var(--ink);
+    overflow: hidden;
+    transition: opacity 0.22s ease, transform 0.22s ease;
+  }
+  .hud[data-state="idle"] { opacity: 0; transform: translateY(-8px) scale(0.985); pointer-events: none; }
+
+  .zone { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.28s cubic-bezier(0.32, 0.72, 0, 1); }
+  .zone > .zone-inner { overflow: hidden; min-height: 0; }
+  .zone.open { grid-template-rows: 1fr; }
+
+  /* Status row */
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 15px 17px;
+  }
+  .glyph {
+    width: 34px; height: 34px;
+    flex: none;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    position: relative;
+  }
+  .glyph svg { width: 17px; height: 17px; }
+  .hud[data-state="listening"] .glyph { color: var(--alert); }
+  .hud[data-state="thinking"] .glyph { color: var(--brass); }
+  .hud[data-state="speaking"] .glyph { color: var(--ink); }
+
+  /* Mic-hot ring */
+  .hud[data-state="listening"] .glyph::after {
+    content: "";
+    position: absolute; inset: -4px;
+    border-radius: 50%;
+    border: 1.5px solid var(--alert);
+    opacity: 0;
+    animation: ring 1.9s ease-out infinite;
+  }
+  @keyframes ring {
+    0% { transform: scale(0.86); opacity: 0.55; }
+    70% { transform: scale(1.22); opacity: 0; }
+    100% { opacity: 0; }
+  }
+
+  .status-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .transcript {
+    font-size: 15px;
+    line-height: 1.35;
+    color: var(--ink);
+    min-height: 20px;
+  }
+  .transcript.dim { color: var(--ink-2); }
+  .caret {
+    display: inline-block;
+    width: 2px; height: 1em;
+    background: var(--brass);
+    vertical-align: -0.16em;
+    margin-left: 1px;
+    animation: blink 1.05s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  canvas.wave { width: 62px; height: 22px; flex: none; opacity: 0; transition: opacity 0.2s; }
+  .hud[data-state="listening"] canvas.wave { opacity: 1; }
+
+  /* Tool rail */
+  .rail-wrap { border-top: 1px solid var(--hud-hairline); padding: 12px 17px 14px; }
+  .rail-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 9px;
+  }
+  .rail { display: flex; flex-direction: column; gap: 7px; }
+
+  .chip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 11px;
+    border-radius: var(--r-chip);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    animation: chip-in 0.3s cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+  @keyframes chip-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+  .app-icon {
+    width: 22px; height: 22px; flex: none;
+    border-radius: 6px;
+    display: grid; place-items: center;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  }
+  .app-icon svg { width: 13px; height: 13px; }
+
+  .chip-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .chip-title { font-size: 13px; line-height: 1.2; }
+  .chip-tool {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .chip-meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  .chip[data-status="running"] .dot { background: var(--brass); animation: pulse 1.15s ease-in-out infinite; }
+  .chip[data-status="done"] .dot { background: var(--ok); }
+  .chip[data-status="failed"] .dot { background: var(--alert); }
+  .chip[data-status="failed"] .chip-meta { color: var(--alert); }
+  @keyframes pulse { 50% { opacity: 0.28; } }
+
+  /* Confirmation chip */
+  .chip.confirm {
+    background: rgba(224, 169, 74, 0.10);
+    border-color: rgba(224, 169, 74, 0.34);
+    flex-wrap: wrap;
+  }
+  .confirm-actions { display: flex; gap: 7px; width: 100%; margin-top: 3px; }
+  .btn-sm {
+    flex: 1;
+    font-family: var(--ui);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 6px 10px;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--ink);
+    cursor: pointer;
+    transition: background 0.14s;
+  }
+  .btn-sm:hover { background: rgba(255, 255, 255, 0.13); }
+  .btn-sm.go { background: rgba(224, 169, 74, 0.9); color: #241804; border-color: transparent; }
+  .btn-sm.go:hover { background: var(--brass); }
+  .btn-sm:focus-visible, .btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+  /* Reply + detail */
+  .reply-wrap { border-top: 1px solid var(--hud-hairline); padding: 13px 17px 15px; }
+  .reply-label { margin-bottom: 5px; }
+  .reply { font-size: 15px; line-height: 1.45; min-height: 20px; }
+  .detail {
+    margin-top: 11px;
+    border-top: 1px solid var(--hud-hairline);
+    padding-top: 11px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.65;
+    color: var(--ink-2);
+    overflow-x: auto;
+  }
+  .detail table { border-collapse: collapse; width: 100%; }
+  .detail td { padding: 2px 0; }
+  .detail td:last-child { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .detail .h {
+    color: var(--ink);
+    font-size: 10px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    padding-bottom: 5px;
+  }
+
+  /* ---------- Controls ---------- */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; }
+  .btn {
+    font-family: var(--ui);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 9px 15px;
+    border-radius: 9px;
+    border: 1px solid var(--page-hairline);
+    background: var(--page-panel);
+    color: var(--page-ink);
+    cursor: pointer;
+    transition: transform 0.12s, border-color 0.14s;
+  }
+  .btn:hover { transform: translateY(-1px); border-color: var(--brass); }
+  .btn.primary { background: var(--brass); border-color: transparent; color: #241804; }
+
+  .notes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
+    gap: 1px;
+    background: var(--page-hairline);
+    border: 1px solid var(--page-hairline);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .note { background: var(--page-panel); padding: 15px 17px; display: flex; flex-direction: column; gap: 5px; }
+  .note h3 {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--page-ink-2);
+    font-weight: 500;
+  }
+  .note p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--page-ink); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>JARVIS &mdash; heads-up display</h1>
+    <p class="sub">
+      The HUD is the whole interface: a non-activating panel pinned top-centre, growing downward
+      as a turn unfolds. It shows what was heard, which apps are being touched right now, and the
+      spoken reply. Press <strong>Run a turn</strong> to watch a full one.
+    </p>
+  </header>
+
+  <div class="controls">
+    <button class="btn primary" id="run">Run a turn</button>
+    <button class="btn" data-jump="listening">Listening</button>
+    <button class="btn" data-jump="thinking">Working</button>
+    <button class="btn" data-jump="speaking">Replying</button>
+    <button class="btn" data-jump="confirm">Confirmation gate</button>
+    <button class="btn" data-jump="failure">Tool failure</button>
+  </div>
+
+  <div class="stage">
+    <div class="hud" id="hud" data-state="idle">
+      <div class="status">
+        <div class="glyph" id="glyph"></div>
+        <div class="status-body">
+          <div class="eyebrow" id="eyebrow">Listening</div>
+          <div class="transcript" id="transcript"></div>
+        </div>
+        <canvas class="wave" id="wave" width="124" height="44"></canvas>
+      </div>
+
+      <div class="zone" id="railZone">
+        <div class="zone-inner">
+          <div class="rail-wrap">
+            <div class="rail-label" id="railLabel">Working</div>
+            <div class="rail" id="rail"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="zone" id="replyZone">
+        <div class="zone-inner">
+          <div class="reply-wrap">
+            <div class="eyebrow reply-label">JARVIS</div>
+            <div class="reply" id="reply"></div>
+            <div class="detail" id="detail" hidden></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <h3>Two channels</h3>
+      <p>The voice says one or two sentences. Anything structured goes to the pane below it, so the
+        spoken reply never reads a table aloud.</p>
+    </div>
+    <div class="note">
+      <h3>Real app icons</h3>
+      <p>Each chip carries the icon of the app actually being driven, pulled from NSWorkspace at
+        runtime. Glanceable proof of what it touched.</p>
+    </div>
+    <div class="note">
+      <h3>Mono means machine</h3>
+      <p>Speech is set in SF Pro, tool names and timings in SF Mono. The typeface tells you whether
+        a human or the machine produced that line.</p>
+    </div>
+    <div class="note">
+      <h3>Always dark</h3>
+      <p>The HUD commits to one dark treatment because it floats over arbitrary desktops. This
+        page around it follows your system theme.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+  const ICONS = {
+    mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>',
+    think: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9" opacity="0.3"/><path d="M12 3a9 9 0 0 1 9 9"/></svg>',
+    speak: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>'
+  };
+
+  // Small hand-drawn marks standing in for macOS app icons.
+  const APPS = {
+    reminders: { bg: 'linear-gradient(160deg,#FF6B6B,#E43D5A)', mark: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17l9-10"/></svg>' },
+    weather:   { bg: 'linear-gradient(160deg,#4FA8F5,#2D6FD4)', mark: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M7 19h10a3.6 3.6 0 0 0 0-7.2 5.2 5.2 0 0 0-9.9 1.4A3 3 0 0 0 7 19z" fill="#fff" stroke="none" opacity="0.92"/></svg>' },
+    calendar:  { bg: 'linear-gradient(160deg,#FFFFFF,#DFE3EA)', mark: '<svg viewBox="0 0 24 24" fill="none" stroke="#D8433F" stroke-width="2.4" stroke-linecap="round"><path d="M4 9h16"/><rect x="4" y="5" width="16" height="15" rx="2.5"/></svg>' },
+    messages:  { bg: 'linear-gradient(160deg,#5BE163,#22B93B)', mark: '<svg viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M12 4C7 4 3 7.3 3 11.4c0 2.3 1.3 4.3 3.3 5.6-.2 1-.8 2.2-1.6 3 1.7-.2 3.3-1 4.3-1.8 1 .2 2 .4 3 .4 5 0 9-3.3 9-7.2S17 4 12 4z"/></svg>' },
+    shortcuts: { bg: 'linear-gradient(160deg,#C46BF0,#6E5BF2)', mark: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3 5 13h6l-2 8 8-10h-6l2-8z"/></svg>' },
+    finder:    { bg: 'linear-gradient(160deg,#3FB6F5,#1E7FD6)', mark: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M9 8v3"/><path d="M15 8v3"/><path d="M8.5 15.5c2 1.6 5 1.6 7 0"/></svg>' }
+  };
+
+  const hud = document.getElementById('hud');
+  const glyph = document.getElementById('glyph');
+  const eyebrow = document.getElementById('eyebrow');
+  const transcript = document.getElementById('transcript');
+  const railZone = document.getElementById('railZone');
+  const railLabel = document.getElementById('railLabel');
+  const rail = document.getElementById('rail');
+  const replyZone = document.getElementById('replyZone');
+  const reply = document.getElementById('reply');
+  const detail = document.getElementById('detail');
+
+  let timers = [];
+  const at = (ms, fn) => timers.push(setTimeout(fn, ms));
+  const clearAll = () => { timers.forEach(clearTimeout); timers = []; tickers.forEach(clearInterval); tickers = []; };
+  let tickers = [];
+
+  function setState(s) {
+    hud.dataset.state = s;
+    glyph.innerHTML = s === 'listening' ? ICONS.mic : s === 'speaking' ? ICONS.speak : ICONS.think;
+    // The top line is always what the user said, so it is never labelled JARVIS.
+    eyebrow.textContent = s === 'listening' ? 'Listening' : 'You said';
+  }
+
+  function reset() {
+    clearAll();
+    rail.innerHTML = '';
+    reply.textContent = '';
+    transcript.textContent = '';
+    transcript.classList.remove('dim');
+    detail.hidden = true;
+    detail.innerHTML = '';
+    railZone.classList.remove('open');
+    replyZone.classList.remove('open');
+    hud.dataset.state = 'idle';
+  }
+
+  function addChip({ app, title, tool, status = 'running' }) {
+    const el = document.createElement('div');
+    el.className = 'chip';
+    el.dataset.status = status;
+    const a = APPS[app];
+    el.innerHTML =
+      `<div class="app-icon" style="background:${a.bg}">${a.mark}</div>` +
+      `<div class="chip-body"><div class="chip-title">${title}</div><div class="chip-tool">${tool}</div></div>` +
+      `<div class="chip-meta"><span class="ms">0 ms</span><span class="dot"></span></div>`;
+    rail.appendChild(el);
+    railZone.classList.add('open');
+
+    const started = performance.now();
+    const msEl = el.querySelector('.ms');
+    const tick = setInterval(() => {
+      if (el.dataset.status !== 'running') return;
+      msEl.textContent = Math.round(performance.now() - started) + ' ms';
+    }, 60);
+    tickers.push(tick);
+    return {
+      finish(ms, ok = true, label) {
+        el.dataset.status = ok ? 'done' : 'failed';
+        msEl.textContent = label || (ms + ' ms');
+      }
+    };
+  }
+
+  function typeInto(el, text, perChar, done) {
+    let i = 0;
+    el.innerHTML = '';
+    const caret = document.createElement('span');
+    caret.className = 'caret';
+    el.appendChild(caret);
+    const iv = setInterval(() => {
+      i++;
+      caret.remove();
+      el.textContent = text.slice(0, i);
+      if (i < text.length) { el.appendChild(caret); }
+      else { clearInterval(iv); done && done(); }
+    }, perChar);
+    tickers.push(iv);
+  }
+
+  // ---- Waveform ----
+  const canvas = document.getElementById('wave');
+  const ctx = canvas.getContext('2d');
+  const BARS = 11;
+  let amps = new Array(BARS).fill(0.12);
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function drawWave() {
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    const bw = 3.6, gap = (w - BARS * bw) / (BARS - 1);
+    const live = hud.dataset.state === 'listening';
+    for (let i = 0; i < BARS; i++) {
+      const target = live ? 0.15 + Math.random() * Math.sin((i / BARS) * Math.PI) * 0.95 : 0.1;
+      amps[i] += (target - amps[i]) * (reduced ? 1 : 0.28);
+      const bh = Math.max(3, amps[i] * h);
+      const x = i * (bw + gap), y = (h - bh) / 2;
+      ctx.fillStyle = '#E8695E';
+      ctx.globalAlpha = 0.55 + amps[i] * 0.45;
+      ctx.beginPath();
+      ctx.roundRect(x, y, bw, bh, bw / 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  setInterval(drawWave, reduced ? 400 : 55);
+
+  // ---- Scripted turn (the Phase 4 acceptance example) ----
+  function runTurn() {
+    reset();
+    setState('listening');
+    transcript.classList.add('dim');
+
+    at(120, () => typeInto(transcript, "Remind me to submit the physics prac at four, and what's the weather tomorrow?", 26));
+
+    at(2500, () => {
+      transcript.classList.remove('dim');
+      setState('thinking');
+      const r = addChip({ app: 'reminders', title: 'Adding a reminder', tool: 'create_reminder' });
+      at(760, () => r.finish(742));
+    });
+
+    at(2760, () => {
+      const w = addChip({ app: 'weather', title: 'Checking tomorrow\u2019s forecast', tool: 'get_weather' });
+      at(980, () => w.finish(961));
+    });
+
+    at(4000, () => {
+      setState('speaking');
+      replyZone.classList.add('open');
+      typeInto(reply, 'Reminder set for four. Tomorrow: nineteen degrees, showers clearing by midday.', 21);
+    });
+
+    at(5400, () => {
+      detail.hidden = false;
+      detail.innerHTML =
+        '<table><tr><td class="h" colspan="2">Tomorrow \u2014 Sydney</td></tr>' +
+        '<tr><td>Showers, clearing</td><td>19\u00b0 / 12\u00b0</td></tr>' +
+        '<tr><td>Rain chance</td><td>70%</td></tr>' +
+        '<tr><td>Reminder</td><td>4:00 pm</td></tr></table>';
+    });
+
+    at(9500, () => reset());
+  }
+
+  function showConfirm() {
+    reset();
+    setState('thinking');
+    transcript.textContent = 'Message Dad that I\u2019ll be late.';
+    railLabel.textContent = 'Needs your go-ahead';
+    const el = document.createElement('div');
+    el.className = 'chip confirm';
+    el.dataset.status = 'running';
+    el.innerHTML =
+      `<div class="app-icon" style="background:${APPS.messages.bg}">${APPS.messages.mark}</div>` +
+      `<div class="chip-body"><div class="chip-title">Send to Dad \u2014 \u201cRunning late, sorry!\u201d</div>` +
+      `<div class="chip-tool">send_message \u00b7 requires confirmation</div></div>` +
+      `<div class="confirm-actions"><button class="btn-sm go">Send</button><button class="btn-sm">Cancel</button></div>`;
+    rail.appendChild(el);
+    railZone.classList.add('open');
+
+    el.querySelector('.go').onclick = () => {
+      el.classList.remove('confirm');
+      el.dataset.status = 'done';
+      el.querySelector('.confirm-actions').remove();
+      el.querySelector('.chip-tool').textContent = 'send_message \u00b7 confirmed';
+      el.insertAdjacentHTML('beforeend', '<div class="chip-meta"><span>412 ms</span><span class="dot"></span></div>');
+      setState('speaking');
+      replyZone.classList.add('open');
+      typeInto(reply, 'Sent.', 40);
+    };
+    el.querySelector('.btn-sm:not(.go)').onclick = () => {
+      el.dataset.status = 'failed';
+      el.querySelector('.confirm-actions').remove();
+      el.querySelector('.chip-tool').textContent = 'send_message \u00b7 cancelled';
+      setState('speaking');
+      replyZone.classList.add('open');
+      typeInto(reply, 'Left it alone.', 34);
+    };
+  }
+
+  function showFailure() {
+    reset();
+    setState('thinking');
+    transcript.textContent = 'Put tonight\u2019s session in my calendar.';
+    const c = addChip({ app: 'calendar', title: 'Creating the event', tool: 'create_event' });
+    at(700, () => {
+      c.finish(0, false, 'no access');
+      setState('speaking');
+      replyZone.classList.add('open');
+      typeInto(reply, 'Calendar access is off, so I couldn\u2019t add it. Grant it in Settings and I\u2019ll try again.', 19);
+    });
+  }
+
+  document.getElementById('run').onclick = runTurn;
+  document.querySelectorAll('[data-jump]').forEach(b => {
+    b.onclick = () => {
+      const s = b.dataset.jump;
+      railLabel.textContent = 'Working';
+      if (s === 'confirm') return showConfirm();
+      if (s === 'failure') return showFailure();
+      reset();
+      setState(s);
+      if (s === 'listening') {
+        transcript.classList.add('dim');
+        typeInto(transcript, "Remind me to submit the physics prac at four\u2026", 26);
+      }
+      if (s === 'thinking') {
+        transcript.textContent = "Remind me to submit the physics prac at four, and what's the weather tomorrow?";
+        const r = addChip({ app: 'reminders', title: 'Adding a reminder', tool: 'create_reminder' });
+        at(700, () => r.finish(742));
+        addChip({ app: 'weather', title: 'Checking tomorrow\u2019s forecast', tool: 'get_weather' });
+      }
+      if (s === 'speaking') {
+        transcript.textContent = "Remind me to submit the physics prac at four, and what's the weather tomorrow?";
+        const r = addChip({ app: 'reminders', title: 'Adding a reminder', tool: 'create_reminder' });
+        r.finish(742);
+        const w = addChip({ app: 'weather', title: 'Checking tomorrow\u2019s forecast', tool: 'get_weather' });
+        w.finish(961);
+        replyZone.classList.add('open');
+        typeInto(reply, 'Reminder set for four. Tomorrow: nineteen degrees, showers clearing by midday.', 21);
+      }
+    };
+  });
+
+  at(400, runTurn);
+</script>
