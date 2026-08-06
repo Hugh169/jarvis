@@ -110,4 +110,42 @@ public enum Anthropic {
         public var id: String?
         public var name: String?
     }
+
+    /// A completed tool call from the model.
+    public struct ToolUse: Sendable, Equatable, Identifiable {
+        public let id: String
+        public let name: String
+        public let input: JSONValue
+
+        public init(id: String, name: String, input: JSONValue) {
+            self.id = id
+            self.name = name
+            self.input = input
+        }
+
+        /// The block to echo back in the assistant turn.
+        public var contentBlock: JSONValue {
+            .object([
+                "type": .string("tool_use"),
+                "id": .string(id),
+                "name": .string(name),
+                "input": input,
+            ])
+        }
+    }
+
+    /// The matching result block sent back as a user turn.
+    public static func toolResultBlock(
+        id: String,
+        content: String,
+        isError: Bool
+    ) -> JSONValue {
+        var object: [String: JSONValue] = [
+            "type": .string("tool_result"),
+            "tool_use_id": .string(id),
+            "content": .string(content),
+        ]
+        if isError { object["is_error"] = .bool(true) }
+        return .object(object)
+    }
 }

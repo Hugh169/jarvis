@@ -11,6 +11,8 @@ final class HUDController {
     private var panel: HUDPanel?
     private var heightObserver: AnyCancellable?
 
+    private var mouseObserver: AnyCancellable?
+
     init(appState: AppState) {
         self.appState = appState
         // HUDView reports its intrinsic height; the panel follows it.
@@ -18,6 +20,19 @@ final class HUDController {
             .removeDuplicates()
             .sink { [weak self] height in
                 self?.resize(to: height)
+            }
+
+        // The panel floats over everything at top-centre, which is exactly
+        // where app toolbars and address bars live. If it accepts clicks while
+        // merely displaying status, a click meant for the window underneath
+        // hits the HUD instead — and when a confirmation is showing, that
+        // silently approves a destructive action. So it is click-through
+        // except when it actually needs a decision.
+        mouseObserver = appState.$pendingConfirmation
+            .map { $0 == nil }
+            .removeDuplicates()
+            .sink { [weak self] clickThrough in
+                self?.panel?.ignoresMouseEvents = clickThrough
             }
     }
 
@@ -46,6 +61,8 @@ final class HUDController {
         host.autoresizingMask = [.width, .height]
         panel.contentView = host
         panel.alphaValue = 0
+        // Click-through until something needs an answer.
+        panel.ignoresMouseEvents = appState.pendingConfirmation == nil
         self.panel = panel
         return panel
     }

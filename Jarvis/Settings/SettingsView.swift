@@ -11,6 +11,8 @@ struct SettingsView: View {
                 .tabItem { Label("API Keys", systemImage: "key") }
             VoiceSettingsView()
                 .tabItem { Label("Voice", systemImage: "waveform") }
+            ActivitySettingsView()
+                .tabItem { Label("Activity", systemImage: "list.bullet.rectangle") }
             PermissionsView()
                 .tabItem { Label("Permissions", systemImage: "lock.shield") }
         }

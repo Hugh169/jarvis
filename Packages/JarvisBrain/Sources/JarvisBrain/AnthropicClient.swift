@@ -24,8 +24,19 @@ public actor AnthropicClient {
     public enum StreamEvent: Sendable, Equatable {
         /// A chunk of assistant text.
         case text(String)
+        /// A completed tool call, once its arguments have finished streaming.
+        case toolUse(Anthropic.ToolUse)
         /// The model finished; carries the stop reason.
         case finished(stopReason: String?)
+    }
+
+    /// Accumulates a `tool_use` block while its arguments stream in as
+    /// `input_json_delta` fragments — the input is not valid JSON until the
+    /// block closes.
+    private struct PendingToolUse {
+        let id: String
+        let name: String
+        var json = ""
     }
 
     private let apiKey: String
@@ -116,6 +127,7 @@ public actor AnthropicClient {
 
         var parser = SSEParser()
         let decoder = JSONDecoder()
+        var pendingTools: [Int: PendingToolUse] = [:]
 
         for try await line in bytes.lines {
             try Task.checkCancellation()
@@ -141,16 +153,39 @@ public actor AnthropicClient {
                 debug?("event \(decoded.type)")
 
                 switch decoded.type {
+                case "content_block_start":
+                    if let block = decoded.contentBlock, block.type == "tool_use",
+                       let index = decoded.index, let id = block.id, let name = block.name {
+                        pendingTools[index] = PendingToolUse(id: id, name: name)
+                    }
+
                 case "content_block_delta":
                     if let text = decoded.delta?.text, !text.isEmpty {
                         continuation.yield(.text(text))
                     }
+                    if let fragment = decoded.delta?.partialJSON, let index = decoded.index {
+                        pendingTools[index]?.json += fragment
+                    }
+
+                case "content_block_stop":
+                    if let index = decoded.index, let pending = pendingTools.removeValue(forKey: index) {
+                        // An empty argument object streams as no deltas at all.
+                        let raw = pending.json.isEmpty ? "{}" : pending.json
+                        let input = (try? decoder.decode(JSONValue.self, from: Data(raw.utf8)))
+                            ?? .object([:])
+                        continuation.yield(.toolUse(
+                            Anthropic.ToolUse(id: pending.id, name: pending.name, input: input)
+                        ))
+                    }
+
                 case "message_delta":
                     if let stop = decoded.delta?.stopReason {
                         continuation.yield(.finished(stopReason: stop))
                     }
+
                 case "error":
                     throw ClientError.transport(event.data)
+
                 default:
                     break
                 }

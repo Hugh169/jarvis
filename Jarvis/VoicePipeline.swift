@@ -5,6 +5,7 @@ import JarvisAudio
 import JarvisSpeech
 import JarvisVoice
 import JarvisBrain
+import JarvisTools
 
 /// Runs one voice turn end to end: mic → on-device STT → Claude (streaming) →
 /// ElevenLabs → speakers.
@@ -305,15 +306,18 @@ final class VoicePipeline {
 
         appState.replyText = ""
         var chunker = SentenceChunker()
-        var spoken = ""
+
+        let tier = appState.modelTier
+        let tools = appState.tools
+        var messages = appState.history + [.user(transcript)]
 
         // Fire the model first: its first token is the long pole.
         metrics.requestSent = .now
-        let tier = appState.modelTier
-        let stream = await brain.stream(
+        var stream = await brain.stream(
             model: tier.modelID,
-            system: SystemPrompt.blocks(),
-            messages: appState.history + [.user(transcript)],
+            system: SystemPrompt.blocks(extraContext: appState.turnContext()),
+            messages: messages,
+            tools: tools.toolDefinitions,
             maxTokens: tier.defaultMaxTokens
         )
 
@@ -324,39 +328,80 @@ final class VoicePipeline {
             startPlayback(from: session)
         }
 
-        trace("request sent")
-        do {
-            for try await event in stream {
-                try Task.checkCancellation()
-                switch event {
-                case .text(let delta):
-                    if metrics.firstTextDelta == nil {
-                        metrics.firstTextDelta = .now
-                        trace("first token")
+        // Tool loop: keep going while the model asks for tools, bounded so a
+        // model that never settles cannot spin forever.
+        for iteration in 0..<ToolCoordinator.maxIterations {
+            var assistantBlocks: [JSONValue] = []
+            var toolUses: [Anthropic.ToolUse] = []
+            var text = ""
+
+            do {
+                for try await event in stream {
+                    try Task.checkCancellation()
+                    switch event {
+                    case .text(let delta):
+                        if metrics.firstTextDelta == nil {
+                            metrics.firstTextDelta = .now
+                            trace("first token")
+                        }
+                        text += delta
+                        appState.replyText += delta
+                        for sentence in chunker.append(delta) {
+                            try? await session?.send(text: sentence)
+                        }
+                    case .toolUse(let use):
+                        toolUses.append(use)
+                    case .finished:
+                        break
                     }
-                    appState.replyText += delta
-                    for sentence in chunker.append(delta) {
-                        spoken += sentence
-                        try? await session?.send(text: sentence)
-                    }
-                case .finished:
-                    break
                 }
+            } catch is CancellationError {
+                session?.cancel()
+                return
+            } catch {
+                session?.cancel()
+                await fail(error.localizedDescription)
+                return
             }
-            if let tail = chunker.flush() {
-                spoken += tail
-                try? await session?.send(text: tail)
+
+            if !text.isEmpty {
+                assistantBlocks.append(.object([
+                    "type": .string("text"), "text": .string(text),
+                ]))
             }
-            try? await session?.finish()
-            trace("model stream complete, \(appState.replyText.count) chars")
-        } catch is CancellationError {
-            session?.cancel()
-            return
-        } catch {
-            session?.cancel()
-            await fail(error.localizedDescription)
-            return
+            assistantBlocks.append(contentsOf: toolUses.map(\.contentBlock))
+
+            guard !toolUses.isEmpty else {
+                trace("stream complete, \(appState.replyText.count) chars after \(iteration) tool round(s)")
+                break
+            }
+
+            trace("running \(toolUses.count) tool(s): \(toolUses.map(\.name).joined(separator: ", "))")
+            messages.append(Anthropic.MessageParam(role: .assistant, content: .array(assistantBlocks)))
+            let results = await tools.execute(toolUses)
+            messages.append(Anthropic.MessageParam(role: .user, content: .array(results)))
+
+            if iteration == ToolCoordinator.maxIterations - 1 {
+                trace("hit the tool-iteration cap")
+                let apology = "I got stuck going round in circles there, so I have stopped."
+                appState.replyText += (appState.replyText.isEmpty ? "" : " ") + apology
+                try? await session?.send(text: apology)
+                break
+            }
+
+            stream = await brain.stream(
+                model: tier.modelID,
+                system: SystemPrompt.blocks(extraContext: appState.turnContext()),
+                messages: messages,
+                tools: tools.toolDefinitions,
+                maxTokens: tier.defaultMaxTokens
+            )
         }
+
+        if let tail = chunker.flush() {
+            try? await session?.send(text: tail)
+        }
+        try? await session?.finish()
 
         appState.appendTurn(user: transcript, assistant: appState.replyText)
 

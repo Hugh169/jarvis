@@ -137,6 +137,12 @@ struct ConfirmationChipView: View {
     let request: ConfirmationRequest
     let onDecision: (Bool) -> Void
 
+    /// Approve stays inert briefly after the chip appears, so a click already
+    /// travelling towards whatever was underneath can't authorise anything.
+    /// Cancel is live immediately — the safe answer never needs protecting.
+    @State private var armed = false
+    private static let armingDelay: Duration = .milliseconds(450)
+
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 10) {
@@ -154,9 +160,14 @@ struct ConfirmationChipView: View {
             }
 
             HStack(spacing: 7) {
+                // No `.defaultAction` on approve. It made approval the window's
+                // default button, so a stray Return authorised a destructive
+                // action — and the HUD is a non-activating panel the user never
+                // deliberately focuses. Approval must be a click.
                 Button(request.confirmVerb) { onDecision(true) }
                     .buttonStyle(HUDButtonStyle(prominent: true))
-                    .keyboardShortcut(.defaultAction)
+                    .disabled(!armed)
+                    .opacity(armed ? 1 : 0.5)
                 Button("Cancel") { onDecision(false) }
                     .buttonStyle(HUDButtonStyle(prominent: false))
                     .keyboardShortcut(.cancelAction)
@@ -168,6 +179,11 @@ struct ConfirmationChipView: View {
             RoundedRectangle(cornerRadius: HUDTheme.chipRadius, style: .continuous)
                 .strokeBorder(HUDTheme.brass.opacity(0.34))
         )
+        .task {
+            armed = false
+            try? await Task.sleep(for: Self.armingDelay)
+            armed = true
+        }
     }
 }
 

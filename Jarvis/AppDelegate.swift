@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Deterministic UI exercise without touching the menu:
         //   open -a Jarvis --args --demo-turn
         appState.preloadKeys()
+        appState.loadShortcuts()
         appState.selectDefaultVoiceIfNeeded()
 
         let arguments = CommandLine.arguments

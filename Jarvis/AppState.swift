@@ -3,6 +3,7 @@ import Combine
 import JarvisCore
 import JarvisBrain
 import JarvisVoice
+import JarvisTools
 
 /// UI-facing state, bridged from the ConversationEngine actor.
 @MainActor
@@ -50,6 +51,11 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(bargeInEnabled, forKey: Self.bargeEnabledKey) }
     }
 
+    /// Every tool reports what it would have done and changes nothing (spec §7).
+    @Published var dryRunEnabled: Bool = false {
+        didSet { UserDefaults.standard.set(dryRunEnabled, forKey: Self.dryRunKey) }
+    }
+
     /// 0 = only a raised voice interrupts, 1 = twitchy. Needs to be adjustable:
     /// on speakers the mic hears JARVIS itself, and the right threshold depends
     /// on the room and the volume.
@@ -61,6 +67,7 @@ final class AppState: ObservableObject {
     private static let tierKey = "modelTier"
     private static let bargeEnabledKey = "bargeInEnabled"
     private static let bargeSensitivityKey = "bargeInSensitivity"
+    private static let dryRunKey = "dryRunEnabled"
 
     /// Rolling conversation context sent with each turn.
     private(set) var history: [Anthropic.MessageParam] = []
@@ -76,6 +83,7 @@ final class AppState: ObservableObject {
 
     private lazy var hud = HUDController(appState: self)
     private lazy var pipeline = VoicePipeline(appState: self)
+    lazy var tools = ToolCoordinator(appState: self)
     private var stateTask: Task<Void, Never>?
 
     private init() {
@@ -90,6 +98,7 @@ final class AppState: ObservableObject {
         if UserDefaults.standard.object(forKey: Self.bargeSensitivityKey) != nil {
             bargeInSensitivity = UserDefaults.standard.float(forKey: Self.bargeSensitivityKey)
         }
+        dryRunEnabled = UserDefaults.standard.bool(forKey: Self.dryRunKey)
         stateTask = Task { [weak self] in
             guard let stream = await self?.engine.states() else { return }
             for await state in stream {
@@ -206,6 +215,38 @@ final class AppState: ObservableObject {
         activityLog.clear()
         activities = []
         hideTask?.cancel()
+    }
+
+    func markActivityAwaitingConfirmation(id: UUID) {
+        guard let index = activities.firstIndex(where: { $0.id == id }) else { return }
+        activities[index].status = .awaitingConfirmation
+    }
+
+    /// Volatile per-turn context. Sent *after* the cached system prefix so it
+    /// never invalidates the cache: the date changes every day and the
+    /// shortcut list whenever the user edits one.
+    func turnContext() -> String {
+        var parts = [
+            "Right now it is \(Date.now.formatted(date: .complete, time: .shortened)) "
+            + "in \(TimeZone.current.identifier)."
+        ]
+        if !availableShortcuts.isEmpty {
+            parts.append(
+                "Shortcuts available to run_shortcut: "
+                + availableShortcuts.joined(separator: ", ") + "."
+            )
+        }
+        return parts.joined(separator: "\n")
+    }
+
+    private(set) var availableShortcuts: [String] = []
+
+    /// Enumerated once at launch (spec §6) so the model knows what exists.
+    func loadShortcuts() {
+        Task.detached(priority: .utility) {
+            let names = RunShortcutTool.availableShortcuts()
+            await MainActor.run { AppState.shared.availableShortcuts = Array(names.prefix(60)) }
+        }
     }
 
     /// Records a completed exchange for context on later turns.

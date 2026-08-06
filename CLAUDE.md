@@ -138,3 +138,21 @@ Entitlements are generated **from `project.yml`** — `xcodegen` overwrites
    and cut its own sentence off — hence the sensitivity slider in Settings.
 4. ⬜ Tier 1 tools + tool loop + confirmation gate + audit log.
 5–9. ⬜ Memory, AppleScript/shell, MCP, computer use, polish.
+
+## The HUD steals clicks
+
+The HUD floats at top-centre, which is exactly where app toolbars, tab bars and
+address bars live. It is `ignoresMouseEvents` while merely showing status, so
+clicks pass through to whatever is underneath — but it *must* accept clicks
+while a confirmation is up, and a click aimed at the window below then lands on
+the confirmation instead.
+
+This was observed for real: repeated writes were approved during testing purely
+because clicks in Safari were landing on the HUD's approve button. Mitigations
+so far: click-through unless a decision is pending, and approve stays inert for
+450ms so an in-flight click can't authorise anything (Cancel is live at once —
+the safe answer never needs protecting).
+
+Residual risk remains: a deliberate click 2s later still hits it. If this bites,
+the options are moving confirmations off the top-centre strip, or promoting them
+to a real focused window.
