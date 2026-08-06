@@ -5,7 +5,7 @@ import Foundation
 @Suite struct InMemoryStoreTests {
     @Test func rememberAndRecall() async throws {
         let store = InMemoryStore()
-        try await store.remember(Fact(text: "the user's physics prac is due Friday", category: "school"))
+        try await store.remember(Fact(text: "the physics prac is due Friday", category: "school"))
         try await store.remember(Fact(text: "Preferred voice is George", category: "preferences"))
 
         let hits = try await store.recall(matching: "physics prac", limit: 10)

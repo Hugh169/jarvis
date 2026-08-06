@@ -22,7 +22,7 @@ public struct KeychainStore: Sendable {
 
     public let service: String
 
-    public init(service: String = "com.jarvis.jarvis") {
+    public init(service: String = "com.jarvis.assistant") {
         self.service = service
     }
 

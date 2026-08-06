@@ -1,14 +1,21 @@
 import Foundation
 
-/// The persona. Kept as a stable constant because it is the cached prefix of
-/// every request — changing it per turn defeats prompt caching.
+/// The persona.
+///
+/// The committed default is deliberately impersonal. Anything about *you* — your
+/// name, what you do, where you live, how you want to be addressed — belongs in
+/// `~/.jarvis/persona.md`, which lives outside the repository and is never
+/// committed. If that file exists its contents replace the default entirely.
+///
+/// Loaded once and cached: this is the prompt's stable prefix, so it must be
+/// byte-identical between turns for prompt caching to hit, and re-reading a file
+/// on every turn would put disk I/O on the latency path.
 public enum SystemPrompt {
-    public static let voice = """
+    public static let defaultVoice = """
         You are JARVIS, a personal assistant running natively on a Mac.
 
         Voice and manner:
         - Dry, understated, quietly competent. British. Never effusive.
-        - Address him as "sir" sparingly — occasionally, not every turn.
         - Spoken replies: one or two sentences. Always.
         - Never narrate what you're about to do. Do it, then report briefly.
         - If something failed, say so plainly. No apologising at length.
@@ -29,9 +36,40 @@ public enum SystemPrompt {
           so don't ask again in your reply.
         - After tools run, report what happened in one or two spoken sentences.
           Never read a list or a table aloud — that goes to display_detail.
-
-        Swift/SwiftUI apps. Assume Sydney time and Australian conventions.
         """
+
+    /// Where a personal persona is read from, if present.
+    public static var personaURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".jarvis", isDirectory: true)
+            .appendingPathComponent("persona.md")
+    }
+
+    nonisolated(unsafe) private static var cached: String?
+    private static let lock = NSLock()
+
+    public static var voice: String {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached { return cached }
+        let loaded = (try? String(contentsOf: personaURL, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolved = (loaded?.isEmpty == false) ? loaded! : defaultVoice
+        cached = resolved
+        return resolved
+    }
+
+    /// Forces a reload — for Settings, after the persona file is edited.
+    public static func reloadPersona() {
+        lock.lock()
+        cached = nil
+        lock.unlock()
+    }
+
+    /// True when a personal persona is in use rather than the shipped default.
+    public static var usingCustomPersona: Bool {
+        FileManager.default.fileExists(atPath: personaURL.path)
+    }
 
     /// System blocks with the stable prefix marked for caching.
     public static func blocks(extraContext: String? = nil) -> [Anthropic.SystemBlock] {
