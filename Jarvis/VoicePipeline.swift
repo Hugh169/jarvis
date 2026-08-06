@@ -32,6 +32,9 @@ final class VoicePipeline {
     /// see them marks speech as started and then immediately "ended", closing
     /// the new utterance before the user has said anything.
     private var ignoreInputUntil: Date?
+    /// Loudest frame this utterance — logged alongside the threshold so a
+    /// mis-detection can be diagnosed from real numbers rather than guessed at.
+    private var peakRMS: Float = 0
 
     /// What the audio thread should do with each buffer. The mic stays live for
     /// the whole turn — barge-in depends on still hearing the room while JARVIS
@@ -69,10 +72,13 @@ final class VoicePipeline {
 
     func beginListening() async {
         metrics = TurnMetrics()
-        vad = EnergyVAD()
+        // reset() rather than a fresh instance: the measured noise floor
+        // describes the room and should carry between turns.
+        vad.reset()
         bargeVAD = EnergyVAD(configuration: .bargeIn(sensitivity: appState.bargeInSensitivity))
         vadClock = 0
         endOfSpeechDetected = false
+        peakRMS = 0
 
         guard await startTranscriber() else { return }
         await startCaptureIfNeeded()
@@ -146,9 +152,18 @@ final class VoicePipeline {
                 break
             case .listening:
                 guard !self.endOfSpeechDetected else { return }
-                if self.vad.process(rms: rms, at: self.vadClock) == .speechEnded {
+                self.peakRMS = max(self.peakRMS, rms)
+                let event = self.vad.process(rms: rms, at: self.vadClock)
+                if event == .speechStarted { self.trace("speech detected") }
+                if event == .speechEnded {
                     self.endOfSpeechDetected = true
                     self.metrics.endOfSpeech = .now
+                    self.trace(String(
+                        format: "end of speech — peak %.4f, floor %.4f, threshold %.4f",
+                        self.peakRMS,
+                        self.vad.measuredNoiseFloor ?? 0,
+                        self.vad.effectiveThreshold
+                    ))
                     await self.endListeningAndRespond()
                 }
             case .awaitingReply:
@@ -196,7 +211,7 @@ final class VoicePipeline {
         // or so that tripped detection is lost — a rolling pre-roll buffer
         // would recover it. Not an issue for the key, which is pressed first.
         metrics = TurnMetrics()
-        vad = EnergyVAD()
+        vad.reset()
         bargeVAD = EnergyVAD(configuration: .bargeIn(sensitivity: appState.bargeInSensitivity))
         vadClock = 0
         endOfSpeechDetected = false
