@@ -33,6 +33,7 @@ final class AppState: ObservableObject {
     /// Long-running work is owned here, not by a view. A Task created inside the
     /// menu bar's content closure dies when the menu is dismissed.
     private var turnTask: Task<Void, Never>?
+    private var hideTask: Task<Void, Never>?
 
     private lazy var hud = HUDController(appState: self)
     private var stateTask: Task<Void, Never>?
@@ -48,11 +49,31 @@ final class AppState: ObservableObject {
 
     private func apply(_ state: TurnState) {
         turnState = state
-        if state == .idle {
-            hud.hide()
-        } else {
+        hideTask?.cancel()
+
+        guard state == .idle else {
             hud.show()
+            return
         }
+
+        // The spec's dismissal rule: linger briefly after a turn so the last
+        // reply is readable, and longer when detail is on screen. Always
+        // bounded — a HUD that can get stuck on screen is worse than one that
+        // leaves too early.
+        let delay: Duration = detailMarkdown == nil ? .seconds(2.5) : .seconds(10)
+        hideTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self, self.turnState == .idle else { return }
+            self.hud.hide()
+            self.detailMarkdown = nil
+        }
+    }
+
+    /// Skips the lingering delay — for the panic key and explicit cancels.
+    private func hideNow() {
+        hideTask?.cancel()
+        hideTask = nil
+        hud.hide()
     }
 
     // MARK: Tool activity
@@ -115,12 +136,14 @@ final class AppState: ObservableObject {
     func endListening() {
         // Phase 2 will hand the transcript to the brain here. For now the turn
         // just ends so the HUD hides.
+        hideNow()
         Task { await engine.handle(.cancelled) }
     }
 
     func toggleListening() {
         Task {
             if await engine.state == .listening {
+                hideNow()
                 await engine.handle(.cancelled)
             } else {
                 beginListening()
@@ -152,6 +175,7 @@ final class AppState: ObservableObject {
         turnTask?.cancel()
         turnTask = nil
         resetTurnContent()
+        hideNow()
         Task { await engine.handle(.cancelled) }
     }
 }

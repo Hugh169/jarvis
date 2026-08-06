@@ -11,7 +11,8 @@ struct HUDView: View {
         VStack(alignment: .leading, spacing: 0) {
             statusRow
 
-            if appState.pendingConfirmation != nil || !appState.activities.isEmpty {
+            if appState.pendingConfirmation != nil || !appState.activities.isEmpty
+                || appState.turnState == .thinking {
                 Divider().overlay(HUDTheme.hairline)
                 toolRail
             }
@@ -79,19 +80,21 @@ struct HUDView: View {
                 .fill(Color.white.opacity(0.06))
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.08)))
 
+            // Mic-hot ring, the one place red appears outside a failure.
+            if appState.turnState == .listening {
+                PulsingRing()
+            }
+
             Image(systemName: glyphSymbol)
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(glyphColor)
                 .contentTransition(.symbolEffect(.replace))
-
-            // Mic-hot ring, the one place red appears outside a failure.
-            if appState.turnState == .listening {
-                Circle()
-                    .strokeBorder(HUDTheme.alert, lineWidth: 1.5)
-                    .scaleEffect(1.22)
-                    .opacity(0)
-                    .transition(.identity)
-            }
+                // Every active state carries motion; a frozen glyph while
+                // Claude is working reads as a hang.
+                .symbolEffect(
+                    .variableColor.iterative.dimInactiveLayers,
+                    isActive: appState.turnState == .thinking || appState.turnState == .speaking
+                )
         }
         .frame(width: 34, height: 34)
     }
@@ -120,6 +123,16 @@ struct HUDView: View {
             EyebrowLabel(text: appState.pendingConfirmation != nil ? "Needs your go-ahead" : "Working")
 
             VStack(spacing: 7) {
+                // Claude often thinks for a beat before calling anything; an
+                // empty rail there reads as nothing happening.
+                if appState.activities.isEmpty && appState.pendingConfirmation == nil {
+                    Text("Thinking…")
+                        .font(.system(size: 13))
+                        .foregroundStyle(HUDTheme.inkSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .transition(.opacity)
+                }
+
                 ForEach(appState.activities) { activity in
                     ToolChipView(activity: activity)
                         .transition(.asymmetric(
@@ -175,6 +188,21 @@ struct HUDView: View {
         .padding(.horizontal, 17)
         .padding(.top, 13)
         .padding(.bottom, 15)
+    }
+
+    /// Expanding ring behind the mic glyph while the input is hot.
+    private struct PulsingRing: View {
+        @State private var expanded = false
+
+        var body: some View {
+            Circle()
+                .strokeBorder(HUDTheme.alert, lineWidth: 1.5)
+                .scaleEffect(expanded ? 1.34 : 0.88)
+                .opacity(expanded ? 0 : 0.55)
+                .animation(.easeOut(duration: 1.7).repeatForever(autoreverses: false), value: expanded)
+                .onAppear { expanded = true }
+                .accessibilityHidden(true)
+        }
     }
 
     /// display_detail sends markdown; render what AttributedString supports and

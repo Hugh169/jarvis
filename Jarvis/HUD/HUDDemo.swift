@@ -19,6 +19,10 @@ enum HUDDemo {
         try? await Task.sleep(for: .milliseconds(350))
         await appState.engine.handle(.transcriptReady)
 
+        // Claude takes a beat before its first tool call; the HUD shows
+        // "Thinking…" in that window rather than an empty rail.
+        try? await Task.sleep(for: .milliseconds(1200))
+
         let reminder = appState.beginActivity(toolName: "create_reminder")
         try? await Task.sleep(for: .milliseconds(260))
         let weather = appState.beginActivity(toolName: "get_weather")
