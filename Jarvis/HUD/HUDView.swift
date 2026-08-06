@@ -48,13 +48,17 @@ struct HUDView: View {
         HStack(spacing: 13) {
             stateGlyph
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 5) {
                 EyebrowLabel(text: appState.turnState == .listening ? "Listening" : "You said")
                 Text(transcriptText)
                     .font(HUDTheme.body)
                     .foregroundStyle(appState.transcriptIsPartial ? HUDTheme.inkSecondary : HUDTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(minHeight: 20, alignment: .leading)
+                    // .topLeading, not .leading: a min-height box centres its
+                    // content vertically, so a one-line transcript would sit
+                    // lower than a two-line one and the gap under the label
+                    // would change with how long you spoke.
+                    .frame(minHeight: 20, alignment: .topLeading)
             }
 
             Spacer(minLength: 8)
