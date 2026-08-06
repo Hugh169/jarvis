@@ -19,10 +19,9 @@ struct MenuBarView: View {
 
         Divider()
 
-        SettingsLink {
-            Text("Settings…")
-        }
-        .keyboardShortcut(",")
+        // Not SettingsLink: it can't front a window from an accessory app.
+        Button("Settings…") { SettingsPresenter.show() }
+            .keyboardShortcut(",")
 
         Divider()
 

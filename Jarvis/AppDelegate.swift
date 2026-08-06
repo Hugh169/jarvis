@@ -24,13 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // SwiftUI Settings scene does not exist yet at didFinishLaunching.
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(600))
-                NSApp.activate(ignoringOtherApps: true)
-                let modern = Selector(("showSettingsWindow:"))
-                if NSApp.responds(to: modern) {
-                    NSApp.perform(modern, with: nil)
-                } else {
-                    NSApp.perform(Selector(("showPreferencesWindow:")), with: nil)
-                }
+                SettingsPresenter.show()
             }
         }
 

@@ -16,7 +16,10 @@ struct SettingsView: View {
             PermissionsView()
                 .tabItem { Label("Permissions", systemImage: "lock.shield") }
         }
-        .frame(width: 480)
+        // No fixed width: the hosting window sizes this. Constraining it
+        // here squeezed the tab bar into an overflow menu, which hid
+        // API Keys entirely.
+        .frame(minWidth: 560, minHeight: 420)
     }
 }
 

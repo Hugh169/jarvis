@@ -14,9 +14,8 @@ struct JarvisApp: App {
             Image(systemName: appState.turnState.menuBarSymbol)
         }
 
-        Settings {
-            SettingsView()
-        }
+        // No `Settings` scene: in an LSUIElement app it never produces a
+        // window. SettingsPresenter owns an NSWindow instead.
     }
 }
 
