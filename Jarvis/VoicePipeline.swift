@@ -26,6 +26,11 @@ final class VoicePipeline {
     private var vadClock: TimeInterval = 0
     private var endOfSpeechDetected = false
     private var captureRunning = false
+    /// Input is ignored until this instant after an interrupt: buffers already
+    /// captured still hold the tail of JARVIS's own voice, and letting the VAD
+    /// see them marks speech as started and then immediately "ended", closing
+    /// the new utterance before the user has said anything.
+    private var ignoreInputUntil: Date?
 
     /// What the audio thread should do with each buffer. The mic stays live for
     /// the whole turn — barge-in depends on still hearing the room while JARVIS
@@ -130,6 +135,11 @@ final class VoicePipeline {
             guard let self else { return }
             self.vadClock += duration
 
+            if let until = self.ignoreInputUntil {
+                guard Date.now >= until else { return }
+                self.ignoreInputUntil = nil
+            }
+
             switch mode {
             case .idle:
                 break
@@ -149,11 +159,26 @@ final class VoicePipeline {
         }
     }
 
-    /// The user talked over JARVIS: cut audio, drop the in-flight turn, and
-    /// start listening again. Everything here is synchronous or cancel-only so
-    /// the audio stops promptly rather than after the next await.
+    /// The user talked over JARVIS.
     private func handleBargeIn() async {
-        trace("barge-in")
+        await interrupt(reason: "barge-in")
+    }
+
+    /// Push-to-talk pressed while JARVIS was still thinking or speaking.
+    ///
+    /// Deliberately ignores the barge-in setting: pressing the key is an
+    /// explicit command, not a heuristic about room noise. Without this the
+    /// reply keeps playing and the new transcriber hears JARVIS's own voice,
+    /// which lands in the next prompt.
+    func interruptAndListen() async {
+        await interrupt(reason: "push-to-talk")
+    }
+
+    /// Cut audio, drop the in-flight turn, and start a fresh utterance.
+    /// Everything here is synchronous or cancel-only so the audio stops
+    /// promptly rather than after the next await.
+    private func interrupt(reason: String) async {
+        trace("interrupt: \(reason)")
         router.update(mode: .idle, transcriber: nil)
 
         playback.stopAndFlush()
@@ -166,15 +191,21 @@ final class VoicePipeline {
 
         await appState.engine.handle(.bargeIn)
 
-        // Reset for the new utterance. The opening word or so that triggered
-        // detection is lost — a rolling pre-roll buffer would recover it.
+        // Reset for the new utterance. When barge-in triggered this, the word
+        // or so that tripped detection is lost — a rolling pre-roll buffer
+        // would recover it. Not an issue for the key, which is pressed first.
         metrics = TurnMetrics()
         vad = EnergyVAD()
         bargeVAD = EnergyVAD(configuration: .bargeIn(sensitivity: appState.bargeInSensitivity))
         vadClock = 0
         endOfSpeechDetected = false
+        // Let the speaker tail clear before trusting the mic again.
+        ignoreInputUntil = Date.now.addingTimeInterval(0.35)
         appState.prepareForBargeInTurn()
 
+        // The mic may not be running if the interrupted turn came from the
+        // text harness rather than a spoken one.
+        await startCaptureIfNeeded()
         await startTranscriber()
     }
 

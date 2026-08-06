@@ -32,6 +32,16 @@ import Testing
         #expect(TurnState.listening.applying(.speechStarted) == nil)
     }
 
+    /// Pressing push-to-talk mid-reply must go through `.bargeIn`, not
+    /// `.listenStarted` — the latter is rejected from these states, which
+    /// silently left JARVIS talking into its own next prompt.
+    @Test func listenStartedIsNotAShortcutOutOfAnActiveTurn() {
+        #expect(TurnState.speaking.applying(.listenStarted) == nil)
+        #expect(TurnState.thinking.applying(.listenStarted) == nil)
+        #expect(TurnState.speaking.applying(.bargeIn) == .listening)
+        #expect(TurnState.thinking.applying(.bargeIn) == .listening)
+    }
+
     @Test func toolOnlyTurnCanFinishWithoutSpeaking() {
         #expect(TurnState.thinking.applying(.speechFinished) == .idle)
     }

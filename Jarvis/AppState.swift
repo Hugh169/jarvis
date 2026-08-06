@@ -235,11 +235,22 @@ final class AppState: ObservableObject {
     // MARK: Intents (called by HotkeyManager and UI)
 
     func beginListening() {
-        resetTurnContent()
-        transcriptIsPartial = true
         Task {
-            await engine.handle(.listenStarted)
-            await pipeline.beginListening()
+            // Pressing the key mid-reply means "stop and listen". `.listenStarted`
+            // isn't a legal transition out of speaking or thinking, so without
+            // this the state machine rejects it, the reply keeps playing, and
+            // JARVIS transcribes its own voice into the next prompt.
+            switch await engine.state {
+            case .speaking, .thinking:
+                await pipeline.interruptAndListen()
+            case .listening:
+                break
+            case .idle:
+                resetTurnContent()
+                transcriptIsPartial = true
+                await engine.handle(.listenStarted)
+                await pipeline.beginListening()
+            }
         }
     }
 
