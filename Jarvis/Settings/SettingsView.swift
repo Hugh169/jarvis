@@ -35,6 +35,23 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Interrupting") {
+                Toggle("Let me talk over JARVIS", isOn: $appState.bargeInEnabled)
+                if appState.bargeInEnabled {
+                    Slider(value: $appState.bargeInSensitivity, in: 0...1) {
+                        Text("Sensitivity")
+                    } minimumValueLabel: {
+                        Text("Raised voice").font(.caption2)
+                    } maximumValueLabel: {
+                        Text("Hair trigger").font(.caption2)
+                    }
+                    Text("On speakers JARVIS can hear itself and cut its own sentence off. "
+                         + "If that happens, drag left. Headphones avoid it entirely.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("Activation") {
                 KeyboardShortcuts.Recorder("Push to talk (hold) / toggle (tap):", name: .pushToTalk)
                 KeyboardShortcuts.Recorder("Panic (cancel everything):", name: .panic)

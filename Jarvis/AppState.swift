@@ -45,8 +45,22 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(modelTier.rawValue, forKey: Self.tierKey) }
     }
 
+    /// Whether talking over JARVIS interrupts it.
+    @Published var bargeInEnabled: Bool = true {
+        didSet { UserDefaults.standard.set(bargeInEnabled, forKey: Self.bargeEnabledKey) }
+    }
+
+    /// 0 = only a raised voice interrupts, 1 = twitchy. Needs to be adjustable:
+    /// on speakers the mic hears JARVIS itself, and the right threshold depends
+    /// on the room and the volume.
+    @Published var bargeInSensitivity: Float = 0.5 {
+        didSet { UserDefaults.standard.set(bargeInSensitivity, forKey: Self.bargeSensitivityKey) }
+    }
+
     private static let voiceKey = "selectedVoiceID"
     private static let tierKey = "modelTier"
+    private static let bargeEnabledKey = "bargeInEnabled"
+    private static let bargeSensitivityKey = "bargeInSensitivity"
 
     /// Rolling conversation context sent with each turn.
     private(set) var history: [Anthropic.MessageParam] = []
@@ -70,6 +84,12 @@ final class AppState: ObservableObject {
            let tier = ModelTier(rawValue: raw) {
             modelTier = tier
         }
+        if UserDefaults.standard.object(forKey: Self.bargeEnabledKey) != nil {
+            bargeInEnabled = UserDefaults.standard.bool(forKey: Self.bargeEnabledKey)
+        }
+        if UserDefaults.standard.object(forKey: Self.bargeSensitivityKey) != nil {
+            bargeInSensitivity = UserDefaults.standard.float(forKey: Self.bargeSensitivityKey)
+        }
         stateTask = Task { [weak self] in
             guard let stream = await self?.engine.states() else { return }
             for await state in stream {
@@ -86,6 +106,11 @@ final class AppState: ObservableObject {
             hud.show()
             return
         }
+
+        // Turn over: release the microphone. It is held open through thinking
+        // and speaking so barge-in can hear you, but holding it while idle
+        // would leave the recording indicator lit for no reason.
+        pipeline.turnFinished()
 
         // The spec's dismissal rule: linger briefly after a turn so the last
         // reply is readable, and longer when detail is on screen. Always
@@ -168,6 +193,19 @@ final class AppState: ObservableObject {
             _ = await self?.apiKey(.anthropicAPIKey)
             _ = await self?.apiKey(.elevenLabsAPIKey)
         }
+    }
+
+    /// Clears the previous turn's content when the user interrupts, keeping the
+    /// HUD visible — the panel is already up and should stay up.
+    func prepareForBargeInTurn() {
+        transcript = ""
+        transcriptIsPartial = true
+        replyText = ""
+        detailMarkdown = nil
+        lastError = nil
+        activityLog.clear()
+        activities = []
+        hideTask?.cancel()
     }
 
     /// Records a completed exchange for context on later turns.

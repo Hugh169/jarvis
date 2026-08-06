@@ -27,6 +27,23 @@ public struct EnergyVAD: Sendable {
             self.trailingSilence = trailingSilence
             self.minimumSpeechDuration = minimumSpeechDuration
         }
+
+        /// Detecting the user over the assistant's own playback.
+        ///
+        /// Deliberately far less sensitive than the listening config: on
+        /// speakers the microphone hears JARVIS itself, and a normal threshold
+        /// makes it interrupt its own sentence. A high bar plus a longer
+        /// sustain means a real interruption still lands quickly while its own
+        /// voice and a stray cough do not.
+        public static func bargeIn(sensitivity: Float = 0.5) -> Configuration {
+            // sensitivity 0…1 maps to a threshold from forgiving to twitchy.
+            let threshold = 0.10 - (0.07 * max(0, min(1, sensitivity)))
+            return Configuration(
+                speechThreshold: threshold,
+                trailingSilence: 0.7,
+                minimumSpeechDuration: 0.35
+            )
+        }
     }
 
     public let configuration: Configuration

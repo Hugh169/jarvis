@@ -20,9 +20,17 @@ final class VoicePipeline {
 
     private var transcriber: AppleTranscriber?
     private var turnTask: Task<Void, Never>?
+    private var ttsSession: ElevenLabsClient.Session?
     private var vad = EnergyVAD()
+    private var bargeVAD = EnergyVAD(configuration: .bargeIn())
     private var vadClock: TimeInterval = 0
     private var endOfSpeechDetected = false
+    private var captureRunning = false
+
+    /// What the audio thread should do with each buffer. The mic stays live for
+    /// the whole turn — barge-in depends on still hearing the room while JARVIS
+    /// speaks — so the routing has to change underneath it.
+    private let router = CaptureRouter()
 
     private(set) var metrics = TurnMetrics()
 
@@ -30,23 +38,53 @@ final class VoicePipeline {
         self.appState = appState
     }
 
+    /// Shared between the audio thread and the main actor, so it owns its own
+    /// lock rather than relying on isolation.
+    final class CaptureRouter: @unchecked Sendable {
+        enum Mode { case idle, listening, awaitingReply }
+
+        private let lock = NSLock()
+        private var transcriber: AppleTranscriber?
+        private var mode: Mode = .idle
+
+        func update(mode: Mode, transcriber: AppleTranscriber?) {
+            lock.withLock {
+                self.mode = mode
+                self.transcriber = transcriber
+            }
+        }
+
+        func current() -> (Mode, AppleTranscriber?) {
+            lock.withLock { (mode, transcriber) }
+        }
+    }
+
     // MARK: Listening
 
     func beginListening() async {
         metrics = TurnMetrics()
         vad = EnergyVAD()
+        bargeVAD = EnergyVAD(configuration: .bargeIn(sensitivity: appState.bargeInSensitivity))
         vadClock = 0
         endOfSpeechDetected = false
 
-        let transcriber = AppleTranscriber()
-        self.transcriber = transcriber
+        guard await startTranscriber() else { return }
+        await startCaptureIfNeeded()
+    }
 
+    /// Fresh transcriber for a new utterance. The capture engine is untouched —
+    /// it runs for the whole turn.
+    @discardableResult
+    private func startTranscriber() async -> Bool {
+        let transcriber = AppleTranscriber()
         do {
             try await transcriber.start()
         } catch {
             await fail("I couldn't start listening. \(error.localizedDescription)")
-            return
+            return false
         }
+        self.transcriber = transcriber
+        router.update(mode: .listening, transcriber: transcriber)
 
         // Live transcript into the HUD.
         Task { [weak self] in
@@ -54,40 +92,90 @@ final class VoicePipeline {
                 await MainActor.run { self?.appState.transcript = partial }
             }
         }
+        return true
+    }
 
+    private func startCaptureIfNeeded() async {
+        guard !captureRunning else { return }
         do {
             try await capture.start(
                 onBuffer: { [weak self] buffer in
-                    // Audio thread: hand off, do nothing expensive.
-                    transcriber.append(buffer)
-                    self?.trackSilence(buffer)
+                    // Audio thread: route and hand off, nothing expensive.
+                    guard let self else { return }
+                    let (mode, transcriber) = self.router.current()
+                    if mode == .listening { transcriber?.append(buffer) }
+                    self.trackEnergy(buffer, mode: mode)
                 },
                 onLevels: { [weak self] levels in
                     Task { @MainActor in self?.appState.micLevels = levels }
                 }
             )
+            captureRunning = true
         } catch {
             await fail("I couldn't reach the microphone. \(error.localizedDescription)")
         }
     }
 
-    /// Energy VAD on the capture thread; end-of-speech ends the utterance
-    /// without waiting for the key to be released.
-    nonisolated private func trackSilence(_ buffer: AVAudioPCMBuffer) {
+    /// Energy VAD on the capture thread. While listening it detects
+    /// end-of-speech; once the turn has moved on it watches for the user
+    /// talking over JARVIS.
+    nonisolated private func trackEnergy(_ buffer: AVAudioPCMBuffer, mode: CaptureRouter.Mode) {
+        guard mode != .idle else { return }
         guard let channel = buffer.floatChannelData?[0] else { return }
         let samples = Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
         let rms = EnergyVAD.rms(of: samples)
         let duration = Double(buffer.frameLength) / buffer.format.sampleRate
 
         Task { @MainActor [weak self] in
-            guard let self, !self.endOfSpeechDetected else { return }
+            guard let self else { return }
             self.vadClock += duration
-            if self.vad.process(rms: rms, at: self.vadClock) == .speechEnded {
-                self.endOfSpeechDetected = true
-                self.metrics.endOfSpeech = .now
-                await self.endListeningAndRespond()
+
+            switch mode {
+            case .idle:
+                break
+            case .listening:
+                guard !self.endOfSpeechDetected else { return }
+                if self.vad.process(rms: rms, at: self.vadClock) == .speechEnded {
+                    self.endOfSpeechDetected = true
+                    self.metrics.endOfSpeech = .now
+                    await self.endListeningAndRespond()
+                }
+            case .awaitingReply:
+                guard self.appState.bargeInEnabled else { return }
+                if self.bargeVAD.process(rms: rms, at: self.vadClock) == .speechStarted {
+                    await self.handleBargeIn()
+                }
             }
         }
+    }
+
+    /// The user talked over JARVIS: cut audio, drop the in-flight turn, and
+    /// start listening again. Everything here is synchronous or cancel-only so
+    /// the audio stops promptly rather than after the next await.
+    private func handleBargeIn() async {
+        trace("barge-in")
+        router.update(mode: .idle, transcriber: nil)
+
+        playback.stopAndFlush()
+        ttsSession?.cancel()
+        ttsSession = nil
+        turnTask?.cancel()
+        turnTask = nil
+        transcriber?.cancel()
+        transcriber = nil
+
+        await appState.engine.handle(.bargeIn)
+
+        // Reset for the new utterance. The opening word or so that triggered
+        // detection is lost — a rolling pre-roll buffer would recover it.
+        metrics = TurnMetrics()
+        vad = EnergyVAD()
+        bargeVAD = EnergyVAD(configuration: .bargeIn(sensitivity: appState.bargeInSensitivity))
+        vadClock = 0
+        endOfSpeechDetected = false
+        appState.prepareForBargeInTurn()
+
+        await startTranscriber()
     }
 
     /// Push-to-talk release: end the utterance now.
@@ -99,7 +187,10 @@ final class VoicePipeline {
     }
 
     private func endListeningAndRespond() async {
-        capture.stop()
+        // The mic keeps running: barge-in needs to hear the room while JARVIS
+        // is thinking and speaking. Only the routing changes.
+        router.update(mode: .awaitingReply, transcriber: nil)
+        trace("mic still live, barge-in \(appState.bargeInEnabled ? "armed" : "off")")
         guard let transcriber else { return }
 
         let transcript: String
@@ -196,6 +287,7 @@ final class VoicePipeline {
         )
 
         let session = await sessionTask.value
+        ttsSession = session
         trace("model=\(tier.modelID) voice=\(voiceID ?? "none") session=\(session == nil ? "nil" : "open")")
         if let session {
             startPlayback(from: session)
@@ -281,12 +373,27 @@ final class VoicePipeline {
     /// Stops audio and cancels the in-flight turn. Phase 3 calls this from
     /// barge-in as well as the panic key.
     func stop() {
+        router.update(mode: .idle, transcriber: nil)
         turnTask?.cancel()
         turnTask = nil
+        ttsSession?.cancel()
+        ttsSession = nil
         transcriber?.cancel()
         transcriber = nil
         capture.stop()
+        captureRunning = false
         playback.stopAndFlush()
+    }
+
+    /// Called when a turn completes normally — releases the mic so it isn't
+    /// held open (and the indicator lit) while idle.
+    func turnFinished() {
+        guard captureRunning else { return }
+        trace("turn over, mic released")
+        router.update(mode: .idle, transcriber: nil)
+        ttsSession = nil
+        capture.stop()
+        captureRunning = false
     }
 
     private func logMetrics() {

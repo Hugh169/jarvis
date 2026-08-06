@@ -123,6 +123,18 @@ Entitlements are generated **from `project.yml`** — `xcodegen` overwrites
    Deviation: deployment target raised to macOS 26 (from 15). `SpeechAnalyzer`
    requires it, and the spec's `SFSpeechRecognizer` fallback existed only for
    older systems this Mac isn't.
-3. ⬜ Latency + barge-in.
+3. 🟡 Latency + barge-in. Sentence pipelining, WebSocket TTS and the PCM
+   playback queue landed in Phase 2. Barge-in is now built: the mic tap stays
+   live through thinking and speaking (`CaptureRouter` routes buffers by turn
+   state), a less sensitive `EnergyVAD.Configuration.bargeIn` watches for the
+   user talking over JARVIS, and a hit cuts playback, cancels the in-flight
+   model stream and TTS socket, and opens a fresh utterance.
+
+   **Unverified end-to-end** — it only engages on a spoken turn, and the
+   `--say` harness never opens the mic. Needs a human to interrupt it.
+
+   Known limits: the word or two that triggers detection is lost (a rolling
+   pre-roll buffer would recover it), and on speakers JARVIS can hear itself
+   and cut its own sentence off — hence the sensitivity slider in Settings.
 4. ⬜ Tier 1 tools + tool loop + confirmation gate + audit log.
 5–9. ⬜ Memory, AppleScript/shell, MCP, computer use, polish.
