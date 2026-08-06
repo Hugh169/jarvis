@@ -30,6 +30,9 @@ final class AppState: ObservableObject {
 
     private var activityLog = ToolActivityLog()
     private var confirmationHandler: ((Bool) -> Void)?
+    /// Long-running work is owned here, not by a view. A Task created inside the
+    /// menu bar's content closure dies when the menu is dismissed.
+    private var turnTask: Task<Void, Never>?
 
     private lazy var hud = HUDController(appState: self)
     private var stateTask: Task<Void, Never>?
@@ -125,9 +128,29 @@ final class AppState: ObservableObject {
         }
     }
 
+    // MARK: Demos (stand in for the pipeline until Phase 2)
+
+    func runDemoTurn() {
+        turnTask?.cancel()
+        turnTask = Task { [weak self] in
+            guard let self else { return }
+            await HUDDemo.runTurn(on: self)
+        }
+    }
+
+    func runDemoConfirmation() {
+        turnTask?.cancel()
+        turnTask = Task { [weak self] in
+            guard let self else { return }
+            await HUDDemo.runConfirmation(on: self)
+        }
+    }
+
     /// Panic: cancel the in-flight turn, stop audio, kill running processes.
     /// Phase 1 only has the turn to cancel.
     func panic() {
+        turnTask?.cancel()
+        turnTask = nil
         resetTurnContent()
         Task { await engine.handle(.cancelled) }
     }

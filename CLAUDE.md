@@ -49,23 +49,30 @@ SwiftUI's `@State` and `#Preview` are macros whose plugins (`SwiftUIMacros`,
 Observation, Swift, and Testing macros, so under CLT alone *every* SwiftUI file
 fails to compile, including KeyboardShortcuts'.
 
-Xcode's licence must be accepted once before any build works:
-
-```sh
-sudo xcodebuild -license accept
-```
+Two one-time setup steps, both done on this machine:
+`sudo xcodebuild -license accept` and `xcodebuild -runFirstLaunch`.
 
 The seven packages have no SwiftUI dependency; `scripts/test.sh` falls back to
-the CLT toolchain automatically, so they test even while the licence is pending.
+the CLT toolchain automatically, so they test even if the licence lapses.
+
+**`swift run JarvisDev` does not give you a usable app.** An unbundled binary
+isn't registered with LaunchServices, so `MenuBarExtra` has nothing to attach to
+and no menu bar icon appears. Always build the `.app`.
 
 ## Commands
 
 ```sh
-./scripts/test.sh               # all package tests (works on CLT; see script for flag rationale)
-swift build                     # compile everything incl. app sources (needs Xcode)
-swift run JarvisDev             # run the menu bar app unbundled (needs Xcode; no TCC perms)
-xcodegen generate               # emit Jarvis.xcodeproj from project.yml (needs Xcode)
+./scripts/test.sh               # all package tests
+./scripts/run.sh                # generate project, build the .app, install, launch
+./scripts/run.sh --demo-turn    # ...and immediately run the HUD demo turn
+swift build                     # type-check everything quickly (no bundle produced)
 ```
+
+`--demo-turn` / `--demo-confirmation` are launch arguments on the app itself,
+so the UI can be exercised deterministically without going through the menu.
+
+Entitlements are generated **from `project.yml`** — `xcodegen` overwrites
+`Jarvis.entitlements` on every run, so edit the YAML, never the plist.
 
 ## Constraints (from the spec — do not regress)
 
@@ -85,12 +92,11 @@ xcodegen generate               # emit Jarvis.xcodeproj from project.yml (needs 
 
 ## Phase status
 
-1. 🟡 Skeleton: packages, menu bar, HUD, hotkeys, Keychain settings, panic key —
-   all written; the seven packages compile and pass 48 tests. The acceptance
-   criterion (⌥Space shows/hides the HUD over a full-screen app) is **unverified**
-   — the app target has never been compiled, pending the Xcode licence above.
-   First run after that: `swift build`, then exercise the HUD via the menu bar's
-   demo items.
+1. ✅ Skeleton: packages, menu bar, HUD, hotkeys, Keychain settings, panic key.
+   48 package tests pass; the app builds, installs, and runs. Verified on screen:
+   menu bar icon and menu, ⌥Space toggling the HUD, and a full demo turn
+   rendering transcript → tool chips (with real app icons and live timings) →
+   reply → detail pane. Not yet verified: HUD over a *full-screen* app.
 2. ⬜ Voice loop (mic → Apple STT → Claude streaming → ElevenLabs Flash v2.5).
 3. ⬜ Latency + barge-in.
 4. ⬜ Tier 1 tools + tool loop + confirmation gate + audit log.

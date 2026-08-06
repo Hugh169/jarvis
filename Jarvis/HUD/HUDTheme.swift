@@ -13,6 +13,11 @@ enum HUDTheme {
     static let alert = Color(red: 0.91, green: 0.41, blue: 0.37)
     static let ok = Color(red: 0.39, green: 0.75, blue: 0.55)
 
+    /// Dark scrim over the blur. `.ultraThinMaterial` alone adapts to whatever
+    /// is behind it and washes the text out over a bright desktop, so the panel
+    /// carries its own ground rather than trusting the wallpaper.
+    static let scrim = Color(red: 0.078, green: 0.094, blue: 0.129).opacity(0.74)
+
     static let hairline = Color.white.opacity(0.10)
     static let chipFill = Color.white.opacity(0.045)
     static let chipStroke = Color.white.opacity(0.07)

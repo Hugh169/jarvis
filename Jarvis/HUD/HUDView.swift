@@ -22,7 +22,13 @@ struct HUDView: View {
             }
         }
         .frame(width: HUDTheme.width, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: HUDTheme.cornerRadius, style: .continuous))
+        .background {
+            let shape = RoundedRectangle(cornerRadius: HUDTheme.cornerRadius, style: .continuous)
+            shape.fill(.ultraThinMaterial)
+                .overlay(shape.fill(HUDTheme.scrim))
+                .compositingGroup()
+                .shadow(color: .black.opacity(0.45), radius: 24, y: 12)
+        }
         .overlay(
             RoundedRectangle(cornerRadius: HUDTheme.cornerRadius, style: .continuous)
                 .strokeBorder(HUDTheme.hairline)
@@ -149,15 +155,17 @@ struct HUDView: View {
                     .overlay(HUDTheme.hairline)
                     .padding(.top, 6)
 
-                ScrollView(.vertical) {
-                    Text(attributed(detail))
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(HUDTheme.inkSecondary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 220)
-                .padding(.top, 5)
+                // Rendered directly rather than in a ScrollView: a scroll view
+                // has no intrinsic content height, so inside this self-sizing
+                // panel it collapses and the detail never appears. The panel is
+                // meant to grow to fit anyway.
+                Text(attributed(detail))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(HUDTheme.inkSecondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 5)
             }
         }
         .padding(.horizontal, 17)

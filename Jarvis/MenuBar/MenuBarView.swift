@@ -14,12 +14,8 @@ struct MenuBarView: View {
 
         Divider()
 
-        Button("Demo: full turn") {
-            Task { await HUDDemo.runTurn(on: appState) }
-        }
-        Button("Demo: confirmation gate") {
-            Task { await HUDDemo.runConfirmation(on: appState) }
-        }
+        Button("Demo: full turn") { appState.runDemoTurn() }
+        Button("Demo: confirmation gate") { appState.runDemoConfirmation() }
 
         Divider()
 
