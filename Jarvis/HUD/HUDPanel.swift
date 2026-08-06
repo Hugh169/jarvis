@@ -15,7 +15,11 @@ final class HUDPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         backgroundColor = .clear
         isOpaque = false
-        hasShadow = true
+        // The window draws no shadow of its own. Its content now includes a
+        // soft ambient halo, and macOS derives the window shadow from content
+        // alpha — which turned the halo's gradient into ragged black shapes
+        // around the panel. Shadows are drawn in SwiftUI instead.
+        hasShadow = false
         hidesOnDeactivate = false
         isMovableByWindowBackground = true
         animationBehavior = .none // fades are driven by HUDController

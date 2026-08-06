@@ -13,9 +13,9 @@ the build plan; work proceeds in phases (currently: **Phase 4 — tools**).
   executable (`JarvisDev`) for a fast no-bundle loop. Not the shipping app.
 - `project.yml` — XcodeGen manifest for the real app bundle (entitlements,
   Info.plist, Hardened Runtime).
-- `design/hud-mockup.html` — interactive mockup of the HUD (every state, no
-  toolchain needed). Open it directly in a browser; it is the reference the
-  SwiftUI in `Jarvis/HUD/` implements.
+- `design/jarvis-hud.dc.html` — the design the HUD implements (Claude Design
+  export). Colours there are authored in OKLCH; `HUDTheme` carries the exact
+  sRGB conversions.
 
 ## HUD design
 
@@ -32,14 +32,28 @@ now, and the reply. Rules it follows:
   humanised name and an SF Symbol.
 - **Typeface encodes source.** Speech in the UI face, tool names and timings in
   monospace.
-- **One accent.** Brass carries "working"; red is reserved for a hot mic and
-  failures; green only for a completed tool.
+- **One accent.** Cyan is the identity: listening, working, and the ambient
+  chrome. Amber means one thing only — needs your go-ahead. Green is a
+  completed tool, red a failed one.
+- **Chrome carries no state.** The reticle corners and the halo look the same
+  whatever is happening; only the scan sweep tracks a state, and it reinforces
+  the glyph rather than being the sole signal.
 - Always dark (`.environment(\.colorScheme, .dark)`) since it floats over
   arbitrary desktops.
 
 `HUDDemo` drives a full turn — transcript, tool chips, reply, detail pane — with
-no audio, network, or tools, via the menu bar. Use it to exercise the UI until
-Phase 2 lands.
+no audio, network, or tools, via the menu bar or `--demo-turn`. It goes through
+`beginSimulatedListening()`, *not* `beginListening()`: the latter opens the real
+microphone, so the demos used to transcribe the room over their own script.
+
+Two things from the reference could not be reproduced as written. The rotating
+conic halo relies on blurring a gradient, and `.blur()` has no pixels to sample
+beyond the layer edge in a transparent borderless window — it renders as a hard
+rectangle with ragged edges. The glow is built from stacked shadows instead,
+which composite cleanly. And the panel scrim is denser than the reference's
+0.74, because AppKit's `.ultraThinMaterial` blurs far less than CSS
+`backdrop-filter: blur(40px)`; at the reference value the window behind stays
+legible through the panel.
 
 ## Toolchain requirement
 

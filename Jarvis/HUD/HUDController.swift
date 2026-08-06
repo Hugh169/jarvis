@@ -52,12 +52,16 @@ final class HUDController {
         }
     }
 
+    /// The window is wider than the panel: HUDView pads itself so the ambient
+    /// halo has somewhere to bleed, and anything outside the window is clipped.
+    private static var windowWidth: CGFloat { HUDTheme.width + HUDTheme.glowPadding * 2 }
+
     private func ensurePanel() -> HUDPanel {
         if let panel { return panel }
-        let height = max(appState.hudContentHeight, 84)
-        let panel = HUDPanel(contentRect: NSRect(x: 0, y: 0, width: HUDTheme.width, height: height))
+        let height = max(appState.hudContentHeight, 84 + HUDTheme.glowPadding * 2)
+        let panel = HUDPanel(contentRect: NSRect(x: 0, y: 0, width: Self.windowWidth, height: height))
         let host = NSHostingView(rootView: HUDView().environmentObject(appState))
-        host.frame = NSRect(x: 0, y: 0, width: HUDTheme.width, height: height)
+        host.frame = NSRect(x: 0, y: 0, width: Self.windowWidth, height: height)
         host.autoresizingMask = [.width, .height]
         panel.contentView = host
         panel.alphaValue = 0
@@ -84,9 +88,11 @@ final class HUDController {
             ?? NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
             ?? NSScreen.screens.first
         guard let visible = screen?.visibleFrame else { return }
+        // The glow padding is transparent, so the visible panel still sits at
+        // the intended inset rather than being pushed down by it.
         panel.setFrameOrigin(NSPoint(
-            x: visible.midX - HUDTheme.width / 2,
-            y: visible.maxY - height - Self.topInset
+            x: visible.midX - Self.windowWidth / 2,
+            y: visible.maxY - height - Self.topInset + HUDTheme.glowPadding
         ))
     }
 

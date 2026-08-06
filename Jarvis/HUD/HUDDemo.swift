@@ -7,7 +7,7 @@ import JarvisCore
 @MainActor
 enum HUDDemo {
     static func runTurn(on appState: AppState) async {
-        appState.beginListening()
+        appState.beginSimulatedListening()
 
         let question = "Remind me to submit the physics prac at four, and what's the weather tomorrow?"
         for prefix in partials(of: question) {
@@ -55,7 +55,7 @@ enum HUDDemo {
 
     /// Demonstrates the confirmation gate without sending anything.
     static func runConfirmation(on appState: AppState) async {
-        appState.beginListening()
+        appState.beginSimulatedListening()
         appState.transcript = "Message Dad that I'll be late."
         appState.transcriptIsPartial = false
         await appState.engine.handle(.transcriptReady)

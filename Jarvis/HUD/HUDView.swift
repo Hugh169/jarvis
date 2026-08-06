@@ -28,12 +28,22 @@ struct HUDView: View {
             shape.fill(.ultraThinMaterial)
                 .overlay(shape.fill(HUDTheme.scrim))
                 .compositingGroup()
-                .shadow(color: .black.opacity(0.45), radius: 24, y: 12)
+                .shadow(color: .black.opacity(0.50), radius: 24, y: 12)
+                // The wide outer bloom, straight from the reference's box-shadow.
+                .shadow(color: HUDTheme.accentGlow.opacity(0.22), radius: 28)
+                .shadow(color: HUDTheme.accentGlow.opacity(0.12), radius: 50)
         }
         .overlay(
             RoundedRectangle(cornerRadius: HUDTheme.cornerRadius, style: .continuous)
-                .strokeBorder(HUDTheme.hairline)
+                .strokeBorder(HUDTheme.accent.opacity(0.40))
         )
+        // Sweep is clipped to the panel; the halo deliberately isn't.
+        .overlay(ScanSweep(isActive: appState.turnState == .thinking))
+        .overlay(ReticleCorners())
+        .clipShape(RoundedRectangle(cornerRadius: HUDTheme.cornerRadius, style: .continuous))
+        .background(AmbientHalo(isActive: appState.turnState != .idle))
+        // Room for the halo to bleed into — without it the window clips the glow.
+        .padding(HUDTheme.glowPadding)
         .environment(\.colorScheme, .dark)
         .animation(.spring(response: 0.32, dampingFraction: 0.86), value: appState.activities)
         .animation(.spring(response: 0.32, dampingFraction: 0.86), value: appState.replyText)
@@ -85,18 +95,31 @@ struct HUDView: View {
                 PulsingRing()
             }
 
+            glyph
+        }
+        .frame(width: 34, height: 34)
+    }
+
+    /// The working glyph spins continuously rather than pulsing — matches the
+    /// reference and reads as activity at a glance.
+    @ViewBuilder
+    private var glyph: some View {
+        if appState.turnState == .thinking {
+            TimelineView(.animation(minimumInterval: 1 / 30)) { context in
+                let t = context.date.timeIntervalSinceReferenceDate
+                Image(systemName: "circle.dotted")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(HUDTheme.accent)
+                    .rotationEffect(.degrees((t / 2.4).truncatingRemainder(dividingBy: 1) * 360))
+            }
+        } else {
             Image(systemName: glyphSymbol)
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(glyphColor)
                 .contentTransition(.symbolEffect(.replace))
-                // Every active state carries motion; a frozen glyph while
-                // Claude is working reads as a hang.
-                .symbolEffect(
-                    .variableColor.iterative.dimInactiveLayers,
-                    isActive: appState.turnState == .thinking || appState.turnState == .speaking
-                )
+                .symbolEffect(.variableColor.iterative.dimInactiveLayers,
+                              isActive: appState.turnState == .speaking)
         }
-        .frame(width: 34, height: 34)
     }
 
     private var glyphSymbol: String {
@@ -110,8 +133,9 @@ struct HUDView: View {
 
     private var glyphColor: Color {
         switch appState.turnState {
-        case .listening: HUDTheme.alert
-        case .thinking: HUDTheme.brass
+        // Cyan now carries listening too — in this palette red is reserved for
+        // a failure, so a hot mic no longer borrows it.
+        case .listening: HUDTheme.accent
         default: HUDTheme.ink
         }
     }
@@ -196,7 +220,7 @@ struct HUDView: View {
 
         var body: some View {
             Circle()
-                .strokeBorder(HUDTheme.alert, lineWidth: 1.5)
+                .strokeBorder(HUDTheme.accent, lineWidth: 1.5)
                 .scaleEffect(expanded ? 1.34 : 0.88)
                 .opacity(expanded ? 0 : 0.55)
                 .animation(.easeOut(duration: 1.7).repeatForever(autoreverses: false), value: expanded)

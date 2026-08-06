@@ -311,6 +311,17 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Puts the HUD into listening without opening the microphone.
+    ///
+    /// The demos used `beginListening()`, which was inert in Phase 1 but now
+    /// starts real capture — so they transcribed whatever was said in the room
+    /// over their scripted transcript, and the VAD ended them early.
+    func beginSimulatedListening() {
+        resetTurnContent()
+        transcriptIsPartial = true
+        Task { await engine.handle(.listenStarted) }
+    }
+
     /// Runs a full turn from typed text — no microphone. See `--say`.
     func runTextTurn(_ text: String) {
         turnTask?.cancel()

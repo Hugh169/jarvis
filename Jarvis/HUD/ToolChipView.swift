@@ -75,7 +75,7 @@ struct ToolChipView: View {
         case .awaitingConfirmation:
             Text("waiting")
                 .font(HUDTheme.mono)
-                .foregroundStyle(HUDTheme.brass)
+                .foregroundStyle(HUDTheme.confirm)
         case .running:
             // Ticks while the tool works; frozen once it finishes.
             TimelineView(.periodic(from: .now, by: 0.1)) { context in
@@ -124,7 +124,8 @@ private struct StatusDot: View {
 
     private var color: Color {
         switch status {
-        case .running, .awaitingConfirmation: HUDTheme.brass
+        case .running: HUDTheme.accent
+        case .awaitingConfirmation: HUDTheme.confirm
         case .succeeded: HUDTheme.ok
         case .failed: HUDTheme.alert
         }
@@ -174,10 +175,10 @@ struct ConfirmationChipView: View {
             }
         }
         .padding(11)
-        .background(HUDTheme.brass.opacity(0.10), in: RoundedRectangle(cornerRadius: HUDTheme.chipRadius, style: .continuous))
+        .background(HUDTheme.confirm.opacity(0.12), in: RoundedRectangle(cornerRadius: HUDTheme.chipRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: HUDTheme.chipRadius, style: .continuous)
-                .strokeBorder(HUDTheme.brass.opacity(0.34))
+                .strokeBorder(HUDTheme.confirm.opacity(0.40))
         )
         .task {
             armed = false
@@ -197,14 +198,14 @@ private struct HUDButtonStyle: ButtonStyle {
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(prominent ? HUDTheme.brass.opacity(configuration.isPressed ? 0.75 : 0.9)
+                    .fill(prominent ? HUDTheme.accent.opacity(configuration.isPressed ? 0.78 : 1.0)
                                     : Color.white.opacity(configuration.isPressed ? 0.16 : 0.07))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .strokeBorder(prominent ? .clear : Color.white.opacity(0.14))
             )
-            .foregroundStyle(prominent ? Color(red: 0.14, green: 0.09, blue: 0.02) : HUDTheme.ink)
+            .foregroundStyle(prominent ? HUDTheme.onAccent : HUDTheme.ink)
             .contentShape(Rectangle())
     }
 }

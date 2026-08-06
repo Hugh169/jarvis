@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  @font-face { font-family: dummy; src: local(dummy); }
+  body { margin: 0; background: #05060a; -webkit-font-smoothing: antialiased; }
+  @keyframes ringPulse { 0% { transform: scale(0.86); opacity: 0.6; } 70% { transform: scale(1.28); opacity: 0; } 100% { opacity: 0; } }
+  @keyframes blinkCaret { 50% { opacity: 0; } }
+  @keyframes chipIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes dotPulse { 50% { opacity: 0.28; } }
+  @keyframes spinSlow { to { transform: rotate(360deg); } }
+  @keyframes scanSweep { 0% { transform: translateX(-120%); opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { transform: translateX(120%); opacity: 0; } }
+  @keyframes floatGlow { 0%,100% { opacity: 0.5; } 50% { opacity: 0.9; } }
+</style>
+</helmet>
+
+<div style="min-height:100vh; background:#05060a; font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif; color:#E6E9F0; display:flex; flex-direction:column; align-items:center; padding:40px 20px 70px; gap:26px;">
+
+  <div style="max-width:760px; width:100%; display:flex; flex-direction:column; gap:6px;">
+    <div style="font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:oklch(78% 0.12 205); font-family:ui-monospace,'SF Mono',Menlo,monospace;">Jarvis — heads-up display</div>
+    <h1 style="margin:0; font-size:24px; font-weight:600; letter-spacing:-0.01em; color:#F2F4F9;">A floating panel, not a chat window</h1>
+    <p style="margin:0; font-size:14px; line-height:1.55; color:#8D95A6; max-width:60ch;">Hold a hotkey, speak, and it answers out loud while showing what it heard, which apps it's touching right now, and the reply on screen. Try the states below.</p>
+  </div>
+
+  <div style="max-width:760px; width:100%; display:flex; flex-wrap:wrap; gap:8px;">
+    <button onClick="{{ onRunTurn }}" style="font-family:inherit; font-size:13px; font-weight:500; padding:9px 16px; border-radius:9px; border:1px solid transparent; background:oklch(78% 0.12 205); color:#06232b; cursor:pointer;" style-hover="background:oklch(82% 0.12 205);">Run a turn</button>
+    <button onClick="{{ onJumpListening }}" style="font-family:inherit; font-size:13px; font-weight:500; padding:9px 16px; border-radius:9px; border:1px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.04); color:#E6E9F0; cursor:pointer;" style-hover="border-color:oklch(78% 0.12 205);">Listening</button>
+    <button onClick="{{ onJumpThinking }}" style="font-family:inherit; font-size:13px; font-weight:500; padding:9px 16px; border-radius:9px; border:1px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.04); color:#E6E9F0; cursor:pointer;" style-hover="border-color:oklch(78% 0.12 205);">Working</button>
+    <button onClick="{{ onJumpSpeaking }}" style="font-family:inherit; font-size:13px; font-weight:500; padding:9px 16px; border-radius:9px; border:1px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.04); color:#E6E9F0; cursor:pointer;" style-hover="border-color:oklch(78% 0.12 205);">Replying</button>
+    <button onClick="{{ onJumpWeather }}" style="font-family:inherit; font-size:13px; font-weight:500; padding:9px 16px; border-radius:9px; border:1px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.04); color:#E6E9F0; cursor:pointer;" style-hover="border-color:oklch(78% 0.12 205);">Weather check</button>
+    <button onClick="{{ onJumpConfirm }}" style="font-family:inherit; font-size:13px; font-weight:500; padding:9px 16px; border-radius:9px; border:1px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.04); color:#E6E9F0; cursor:pointer;" style-hover="border-color:oklch(78% 0.12 205);">Confirmation gate</button>
+    <button onClick="{{ onJumpFailure }}" style="font-family:inherit; font-size:13px; font-weight:500; padding:9px 16px; border-radius:9px; border:1px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.04); color:#E6E9F0; cursor:pointer;" style-hover="border-color:oklch(78% 0.12 205);">Tool failure</button>
+  </div>
+
+  <div ref="{{ stageRef }}" style="position:relative; width:100%; max-width:760px; min-height:520px; border-radius:18px; overflow:hidden; border:1px solid rgba(255,255,255,0.08); background:
+      radial-gradient(120% 90% at 16% 6%, rgba(35,90,120,0.55) 0%, transparent 55%),
+      radial-gradient(100% 80% at 90% 18%, rgba(120,70,50,0.4) 0%, transparent 52%),
+      linear-gradient(168deg, #10141f 0%, #0a0c12 62%, #12151d 100%);
+      display:flex; flex-direction:column; align-items:center; padding:0 0 40px;">
+
+    <!-- menu bar strip -->
+    <div style="width:100%; height:26px; flex:none; background:rgba(8,10,15,0.55); border-bottom:1px solid rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:flex-end; padding:0 14px; gap:12px; position:relative; z-index:5;">
+      <div onClick="{{ onToggleMenu }}" style="width:16px; height:16px; border-radius:50%; border:1.4px solid oklch(78% 0.12 205); position:relative; cursor:pointer; box-shadow:0 0 6px oklch(78% 0.12 205 / 0.6);">
+        <div style="position:absolute; inset:3.5px; border-radius:50%; background:oklch(78% 0.12 205); opacity:0.7;"></div>
+      </div>
+      <sc-if value="{{ menuOpen }}">
+        <div style="position:absolute; top:26px; right:14px; width:200px; background:rgba(16,19,28,0.92); backdrop-filter:blur(20px); border:1px solid rgba(255,255,255,0.10); border-radius:10px; box-shadow:0 16px 40px rgba(0,0,0,0.5); padding:10px; display:flex; flex-direction:column; gap:2px; z-index:10;">
+          <div style="font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:10px; letter-spacing:0.09em; text-transform:uppercase; color:#69707F; padding:2px 8px 6px;">Jarvis · idle</div>
+          <div style="font-size:12.5px; color:#9AA3B5; padding:2px 8px 8px;">⌥Space to talk · ⌥Esc to cancel</div>
+          <div style="height:1px; background:rgba(255,255,255,0.08); margin:2px 0;"></div>
+          <div style="font-size:13px; padding:7px 8px; border-radius:6px; cursor:pointer;" style-hover="background:rgba(255,255,255,0.06);">Open HUD</div>
+          <div style="font-size:13px; padding:7px 8px; border-radius:6px; cursor:pointer;" style-hover="background:rgba(255,255,255,0.06);">Settings…</div>
+          <div style="font-size:13px; padding:7px 8px; border-radius:6px; cursor:pointer; color:#E8695E;" style-hover="background:rgba(255,255,255,0.06);">Quit</div>
+        </div>
+      </sc-if>
+    </div>
+
+    <div style="width:100%; flex:1; display:flex; justify-content:center; align-items:flex-start; padding:26px 16px 0;">
+      <div style="position:relative; width:min(480px,100%);">
+
+        <!-- ambient rotating glow ring behind panel -->
+        <div style="position:absolute; inset:-36px; border-radius:36px; background:conic-gradient(from 0deg, oklch(78% 0.14 205 / 0.55), transparent 22%, oklch(78% 0.14 205 / 0.4) 50%, transparent 78%, oklch(78% 0.14 205 / 0.55)); filter:blur(26px); animation:spinSlow 14s linear infinite; opacity:0.8; pointer-events:none;"></div>
+        <div style="position:absolute; inset:-2px; border-radius:22px; border:1.5px solid oklch(78% 0.14 205 / 0.55); box-shadow:0 0 18px oklch(78% 0.14 205 / 0.55), 0 0 40px oklch(78% 0.14 205 / 0.3); animation:floatGlow 3.2s ease-in-out infinite; pointer-events:none;"></div>
+
+        <div ref="{{ hudRef }}" style="position:relative; background:rgba(14,17,26,0.74); backdrop-filter:blur(40px) saturate(180%); -webkit-backdrop-filter:blur(40px) saturate(180%); border:1px solid oklch(78% 0.12 205 / 0.4); border-radius:20px; box-shadow:0 24px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 55px oklch(78% 0.14 205 / 0.22), 0 0 100px oklch(78% 0.14 205 / 0.12); color:#EDEFF5; overflow:hidden;">
+
+          <!-- corner brackets, HUD reticle -->
+          <div style="position:absolute; top:8px; left:8px; width:14px; height:14px; border-top:1.5px solid oklch(78% 0.14 205 / 0.8); border-left:1.5px solid oklch(78% 0.14 205 / 0.8); border-radius:4px 0 0 0; pointer-events:none; filter:drop-shadow(0 0 4px oklch(78% 0.14 205 / 0.8));"></div>
+          <div style="position:absolute; top:8px; right:8px; width:14px; height:14px; border-top:1.5px solid oklch(78% 0.14 205 / 0.8); border-right:1.5px solid oklch(78% 0.14 205 / 0.8); border-radius:0 4px 0 0; pointer-events:none; filter:drop-shadow(0 0 4px oklch(78% 0.14 205 / 0.8));"></div>
+          <div style="position:absolute; bottom:8px; left:8px; width:14px; height:14px; border-bottom:1.5px solid oklch(78% 0.14 205 / 0.8); border-left:1.5px solid oklch(78% 0.14 205 / 0.8); border-radius:0 0 0 4px; pointer-events:none; filter:drop-shadow(0 0 4px oklch(78% 0.14 205 / 0.8));"></div>
+          <div style="position:absolute; bottom:8px; right:8px; width:14px; height:14px; border-bottom:1.5px solid oklch(78% 0.14 205 / 0.8); border-right:1.5px solid oklch(78% 0.14 205 / 0.8); border-radius:0 0 4px 0; pointer-events:none; filter:drop-shadow(0 0 4px oklch(78% 0.14 205 / 0.8));"></div>
+
+          <!-- scan sweep, shown during thinking -->
+          <div ref="{{ scanRef }}" style="position:absolute; inset:0; overflow:hidden; pointer-events:none; opacity:0;">
+            <div style="position:absolute; top:0; bottom:0; width:40%; background:linear-gradient(90deg, transparent, oklch(78% 0.12 205 / 0.10), transparent); animation:scanSweep 2.2s ease-in-out infinite;"></div>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:13px; padding:15px 17px; position:relative;">
+            <div style="width:34px; height:34px; flex:none; border-radius:50%; display:grid; place-items:center; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); position:relative;">
+              <div ref="{{ ringRef }}" style="position:absolute; inset:-4px; border-radius:50%; border:1.5px solid oklch(78% 0.12 205); opacity:0; animation:ringPulse 1.9s ease-out infinite;"></div>
+              <div ref="{{ glyphMicRef }}" style="width:17px; height:17px; color:oklch(78% 0.12 205); display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="17" height="17"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg></div>
+              <div ref="{{ glyphThinkRef }}" style="width:17px; height:17px; color:oklch(78% 0.12 205); display:none; animation:spinSlow 2.4s linear infinite;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="17" height="17"><circle cx="12" cy="12" r="9" opacity="0.25"></circle><path d="M12 3a9 9 0 0 1 9 9"></path></svg></div>
+              <div ref="{{ glyphSpeakRef }}" style="width:17px; height:17px; color:#EDEFF5; display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><path d="M11 5 6 9H3v6h3l5 4V5z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg></div>
+            </div>
+
+            <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:3px;">
+              <div ref="{{ eyebrowRef }}" style="font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:10px; letter-spacing:0.09em; text-transform:uppercase; color:#69707F;">Listening</div>
+              <div ref="{{ transcriptRef }}" style="font-size:15px; line-height:1.35; color:#EDEFF5; min-height:20px;"></div>
+            </div>
+
+            <canvas ref="{{ waveRef }}" width="124" height="44" style="width:62px; height:22px; flex:none; opacity:0; transition:opacity 0.2s;"></canvas>
+          </div>
+
+          <div ref="{{ railZoneRef }}" style="display:grid; grid-template-rows:0fr; transition:grid-template-rows 0.28s cubic-bezier(0.32,0.72,0,1);">
+            <div style="overflow:hidden; min-height:0;">
+              <div style="border-top:1px solid rgba(255,255,255,0.10); padding:12px 17px 14px;">
+                <div ref="{{ railLabelRef }}" style="font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:10px; letter-spacing:0.09em; text-transform:uppercase; color:#69707F; margin-bottom:9px;">Working</div>
+                <div ref="{{ railRef }}" style="display:flex; flex-direction:column; gap:7px;"></div>
+              </div>
+            </div>
+          </div>
+
+          <div ref="{{ replyZoneRef }}" style="display:grid; grid-template-rows:0fr; transition:grid-template-rows 0.28s cubic-bezier(0.32,0.72,0,1);">
+            <div style="overflow:hidden; min-height:0;">
+              <div style="border-top:1px solid rgba(255,255,255,0.10); padding:13px 17px 15px;">
+                <div style="font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:10px; letter-spacing:0.09em; text-transform:uppercase; color:#69707F; margin-bottom:5px;">Jarvis</div>
+                <div ref="{{ replyRef }}" style="font-size:15px; line-height:1.45; min-height:20px;"></div>
+                <div ref="{{ detailRef }}" style="margin-top:11px; border-top:1px solid rgba(255,255,255,0.10); padding-top:11px; font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:12px; line-height:1.65; color:#9AA3B5;" hidden=""></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="max-width:760px; width:100%; margin:0; font-size:12.5px; line-height:1.6; color:#5C6475;">Speech is set in SF Pro, tool names and timings in SF Mono — the typeface tells you whether a human or the machine produced that line. The cyan ring and corner marks are ambient chrome; they don't carry state on their own.</p>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { menuOpen: false };
+    this.stageRef = React.createRef();
+    this.hudRef = React.createRef();
+    this.ringRef = React.createRef();
+    this.glyphMicRef = React.createRef();
+    this.glyphThinkRef = React.createRef();
+    this.glyphSpeakRef = React.createRef();
+    this.eyebrowRef = React.createRef();
+    this.transcriptRef = React.createRef();
+    this.waveRef = React.createRef();
+    this.railZoneRef = React.createRef();
+    this.railLabelRef = React.createRef();
+    this.railRef = React.createRef();
+    this.replyZoneRef = React.createRef();
+    this.replyRef = React.createRef();
+    this.detailRef = React.createRef();
+    this.scanRef = React.createRef();
+
+    this.timers = [];
+    this.tickers = [];
+    this.amps = new Array(11).fill(0.12);
+
+    this.APPS = {
+      email: { bg: 'linear-gradient(160deg,#6FD5C6,#2F9E8A)', mark: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="6" width="17" height="12" rx="2"/><path d="M4 7.5 12 13l8-5.5"/></svg>' },
+      weather: { bg: 'linear-gradient(160deg,#4FA8F5,#2D6FD4)', mark: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M7 19h10a3.6 3.6 0 0 0 0-7.2 5.2 5.2 0 0 0-9.9 1.4A3 3 0 0 0 7 19z" fill="#fff" stroke="none" opacity="0.92"/></svg>' },
+      calendar: { bg: 'linear-gradient(160deg,#FFFFFF,#DFE3EA)', mark: '<svg viewBox="0 0 24 24" fill="none" stroke="#D8433F" stroke-width="2.4" stroke-linecap="round"><path d="M4 9h16"/><rect x="4" y="5" width="16" height="15" rx="2.5"/></svg>' },
+      messages: { bg: 'linear-gradient(160deg,#5BE163,#22B93B)', mark: '<svg viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M12 4C7 4 3 7.3 3 11.4c0 2.3 1.3 4.3 3.3 5.6-.2 1-.8 2.2-1.6 3 1.7-.2 3.3-1 4.3-1.8 1 .2 2 .4 3 .4 5 0 9-3.3 9-7.2S17 4 12 4z"/></svg>' }
+    };
+  }
+
+  componentDidMount() {
+    this.timers.push(setTimeout(() => this.runTurn(), 400));
+  }
+
+  componentWillUnmount() {
+    this.clearAll();
+  }
+
+  at(ms, fn) { this.timers.push(setTimeout(fn, ms)); }
+  clearAll() {
+    this.timers.forEach(clearTimeout); this.timers = [];
+    this.tickers.forEach(clearInterval); this.tickers = [];
+  }
+
+  setHudState(s) {
+    const showGlyph = (ref, on) => { if (ref.current) ref.current.style.display = on ? 'flex' : 'none'; };
+    showGlyph(this.glyphMicRef, s === 'listening');
+    showGlyph(this.glyphThinkRef, s === 'thinking');
+    showGlyph(this.glyphSpeakRef, s === 'speaking');
+    if (this.ringRef.current) this.ringRef.current.style.opacity = s === 'listening' ? '1' : '0';
+    if (this.scanRef.current) this.scanRef.current.style.opacity = s === 'thinking' ? '1' : '0';
+    if (this.eyebrowRef.current) this.eyebrowRef.current.textContent = s === 'listening' ? 'Listening' : 'You said';
+  }
+
+  reset() {
+    this.clearAll();
+    if (this.railRef.current) this.railRef.current.innerHTML = '';
+    if (this.replyRef.current) this.replyRef.current.textContent = '';
+    if (this.transcriptRef.current) { this.transcriptRef.current.textContent = ''; this.transcriptRef.current.style.color = '#EDEFF5'; }
+    if (this.detailRef.current) { this.detailRef.current.hidden = true; this.detailRef.current.innerHTML = ''; }
+    if (this.railZoneRef.current) this.railZoneRef.current.style.gridTemplateRows = '0fr';
+    if (this.replyZoneRef.current) this.replyZoneRef.current.style.gridTemplateRows = '0fr';
+    if (this.railLabelRef.current) this.railLabelRef.current.textContent = 'Working';
+    this.setHudState('idle');
+  }
+
+  openRail() { if (this.railZoneRef.current) this.railZoneRef.current.style.gridTemplateRows = '1fr'; }
+  openReply() { if (this.replyZoneRef.current) this.replyZoneRef.current.style.gridTemplateRows = '1fr'; }
+
+  addChip({ app, title, tool, status = 'running' }) {
+    const a = this.APPS[app];
+    const el = document.createElement('div');
+    el.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 11px;border-radius:9px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.07);animation:chipIn 0.3s cubic-bezier(0.32,0.72,0,1) both;';
+    el.innerHTML =
+      `<div style="width:22px;height:22px;flex:none;border-radius:6px;display:grid;place-items:center;box-shadow:inset 0 1px 0 rgba(255,255,255,0.22);background:${a.bg}"><div style="width:13px;height:13px;">${a.mark}</div></div>` +
+      `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;"><div style="font-size:13px;line-height:1.2;">${title}</div><div style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:10.5px;color:#69707F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${tool}</div></div>` +
+      `<div class="meta" style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px;color:#9AA3B5;font-variant-numeric:tabular-nums;flex:none;display:flex;align-items:center;gap:7px;"><span class="ms">0 ms</span><span class="dot" style="width:6px;height:6px;border-radius:50%;flex:none;background:oklch(78% 0.12 205);animation:dotPulse 1.15s ease-in-out infinite;"></span></div>`;
+    this.railRef.current.appendChild(el);
+    this.openRail();
+    const started = performance.now();
+    const msEl = el.querySelector('.ms');
+    const dot = el.querySelector('.dot');
+    const tick = setInterval(() => {
+      if (el.dataset.done) return;
+      msEl.textContent = Math.round(performance.now() - started) + ' ms';
+    }, 60);
+    this.tickers.push(tick);
+    return {
+      finish(ms, ok = true, label) {
+        el.dataset.done = '1';
+        dot.style.animation = 'none';
+        dot.style.background = ok ? '#63C08C' : '#E8695E';
+        msEl.textContent = label || (ms + ' ms');
+        if (!ok) msEl.parentElement.style.color = '#E8695E';
+      }
+    };
+  }
+
+  typeInto(ref, text, perChar, done) {
+    const el = ref.current;
+    let i = 0;
+    el.innerHTML = '';
+    const caret = document.createElement('span');
+    caret.style.cssText = 'display:inline-block;width:2px;height:1em;background:oklch(78% 0.12 205);vertical-align:-0.16em;margin-left:1px;animation:blinkCaret 1.05s steps(1) infinite;';
+    el.appendChild(caret);
+    const iv = setInterval(() => {
+      i++;
+      caret.remove();
+      el.textContent = text.slice(0, i);
+      if (i < text.length) el.appendChild(caret);
+      else clearInterval(iv);
+      if (i >= text.length && done) done();
+    }, perChar);
+    this.tickers.push(iv);
+  }
+
+  drawWave() {
+    const canvas = this.waveRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height, BARS = 11;
+    ctx.clearRect(0, 0, w, h);
+    const bw = 3.6, gap = (w - BARS * bw) / (BARS - 1);
+    const live = this.hudRef.current && this.glyphMicRef.current && this.glyphMicRef.current.style.display !== 'none';
+    canvas.style.opacity = live ? '1' : '0';
+    for (let i = 0; i < BARS; i++) {
+      const target = live ? 0.15 + Math.random() * Math.sin((i / BARS) * Math.PI) * 0.95 : 0.1;
+      this.amps[i] += (target - this.amps[i]) * 0.28;
+      const bh = Math.max(3, this.amps[i] * h);
+      const x = i * (bw + gap), y = (h - bh) / 2;
+      ctx.fillStyle = '#5FD3E8';
+      ctx.globalAlpha = 0.55 + this.amps[i] * 0.45;
+      ctx.beginPath();
+      ctx.roundRect(x, y, bw, bh, bw / 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  runTurn() {
+    this.reset();
+    this.setHudState('listening');
+    if (this.transcriptRef.current) this.transcriptRef.current.style.color = '#9AA3B5';
+
+    this.at(120, () => this.typeInto(this.transcriptRef, "Check my email and what's the weather like today?", 26));
+
+    this.at(2400, () => {
+      if (this.transcriptRef.current) this.transcriptRef.current.style.color = '#EDEFF5';
+      this.setHudState('thinking');
+      const e = this.addChip({ app: 'email', title: 'Reading your inbox', tool: 'check_email' });
+      this.at(700, () => e.finish(684));
+    });
+
+    this.at(2600, () => {
+      const w = this.addChip({ app: 'weather', title: "Checking today's forecast", tool: 'get_weather' });
+      this.at(820, () => w.finish(803));
+    });
+
+    this.at(3800, () => {
+      this.setHudState('speaking');
+      this.openReply();
+      this.typeInto(this.replyRef, 'Three unread — nothing urgent. Nineteen degrees and clear until this evening.', 20);
+    });
+
+    this.at(5200, () => {
+      if (this.detailRef.current) {
+        this.detailRef.current.hidden = false;
+        this.detailRef.current.innerHTML =
+          '<table style="border-collapse:collapse;width:100%"><tr><td style="padding-bottom:5px;color:#EDEFF5;font-size:10px;letter-spacing:0.09em;text-transform:uppercase;" colspan="2">Inbox &amp; forecast</td></tr>' +
+          '<tr><td style="padding:2px 0;">Unread</td><td style="padding:2px 0;text-align:right;color:#EDEFF5;">3</td></tr>' +
+          '<tr><td style="padding:2px 0;">Flagged</td><td style="padding:2px 0;text-align:right;color:#EDEFF5;">1</td></tr>' +
+          '<tr><td style="padding:2px 0;">Today</td><td style="padding:2px 0;text-align:right;color:#EDEFF5;">19° · clear</td></tr></table>';
+      }
+    });
+
+    this.at(9800, () => this.reset());
+  }
+
+  weatherTurn() {
+    this.reset();
+    this.setHudState('thinking');
+    if (this.transcriptRef.current) this.transcriptRef.current.textContent = "What's the weather like this weekend?";
+    const w = this.addChip({ app: 'weather', title: 'Checking the weekend forecast', tool: 'get_weather' });
+    this.at(750, () => {
+      w.finish(738);
+      this.setHudState('speaking');
+      this.openReply();
+      this.typeInto(this.replyRef, 'Mild and mostly sunny, a chance of showers Sunday afternoon.', 21);
+    });
+  }
+
+  showConfirm() {
+    this.reset();
+    this.setHudState('thinking');
+    if (this.transcriptRef.current) this.transcriptRef.current.textContent = "Text Sarah that I'll be ten minutes late.";
+    if (this.railLabelRef.current) this.railLabelRef.current.textContent = 'Needs your go-ahead';
+    const a = this.APPS.messages;
+    const el = document.createElement('div');
+    el.style.cssText = 'display:flex;align-items:center;gap:10px;padding:11px;border-radius:9px;background:oklch(78% 0.13 70 / 0.12);border:1px solid oklch(78% 0.13 70 / 0.4);flex-wrap:wrap;animation:chipIn 0.3s cubic-bezier(0.32,0.72,0,1) both;';
+    el.innerHTML =
+      `<div style="width:22px;height:22px;flex:none;border-radius:6px;display:grid;place-items:center;background:${a.bg}"><div style="width:13px;height:13px;">${a.mark}</div></div>` +
+      `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;"><div style="font-size:13px;">Send to Sarah — “Running a bit late!”</div><div class="tool" style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:10.5px;color:#69707F;">send_message · requires confirmation</div></div>` +
+      `<div class="actions" style="display:flex;gap:7px;width:100%;margin-top:3px;"><button class="go" style="flex:1;font-family:inherit;font-size:12px;font-weight:500;padding:6px 10px;border-radius:7px;border:none;background:oklch(78% 0.12 205);color:#06232b;cursor:pointer;">Send</button><button class="cancel" style="flex:1;font-family:inherit;font-size:12px;font-weight:500;padding:6px 10px;border-radius:7px;border:1px solid rgba(255,255,255,0.14);background:rgba(255,255,255,0.07);color:#EDEFF5;cursor:pointer;">Cancel</button></div>`;
+    this.railRef.current.appendChild(el);
+    this.openRail();
+
+    el.querySelector('.go').onclick = () => {
+      el.style.background = 'rgba(255,255,255,0.045)';
+      el.style.borderColor = 'rgba(255,255,255,0.07)';
+      el.querySelector('.actions').remove();
+      el.querySelector('.tool').textContent = 'send_message · confirmed';
+      this.setHudState('speaking');
+      this.openReply();
+      this.typeInto(this.replyRef, 'Sent.', 40);
+    };
+    el.querySelector('.cancel').onclick = () => {
+      el.querySelector('.actions').remove();
+      el.querySelector('.tool').textContent = 'send_message · cancelled';
+      this.setHudState('speaking');
+      this.openReply();
+      this.typeInto(this.replyRef, 'Left it alone.', 34);
+    };
+  }
+
+  showFailure() {
+    this.reset();
+    this.setHudState('thinking');
+    if (this.transcriptRef.current) this.transcriptRef.current.textContent = "Put tonight's session on my calendar.";
+    const c = this.addChip({ app: 'calendar', title: 'Creating the event', tool: 'create_event' });
+    this.at(700, () => {
+      c.finish(0, false, 'no access');
+      this.setHudState('speaking');
+      this.openReply();
+      this.typeInto(this.replyRef, "Calendar access is off, so I couldn't add it. Grant it in Settings and I'll try again.", 18);
+    });
+  }
+
+  jump(s) {
+    this.reset();
+    if (this.railLabelRef.current) this.railLabelRef.current.textContent = 'Working';
+    this.setHudState(s);
+    if (s === 'listening') {
+      if (this.transcriptRef.current) this.transcriptRef.current.style.color = '#9AA3B5';
+      this.typeInto(this.transcriptRef, 'Check my email and what\u2019s the weather like\u2026', 26);
+    }
+    if (s === 'thinking') {
+      if (this.transcriptRef.current) this.transcriptRef.current.textContent = "Check my email and what's the weather like today?";
+      const e = this.addChip({ app: 'email', title: 'Reading your inbox', tool: 'check_email' });
+      this.at(700, () => e.finish(684));
+      this.addChip({ app: 'weather', title: "Checking today's forecast", tool: 'get_weather' });
+    }
+    if (s === 'speaking') {
+      if (this.transcriptRef.current) this.transcriptRef.current.textContent = "Check my email and what's the weather like today?";
+      const e = this.addChip({ app: 'email', title: 'Reading your inbox', tool: 'check_email' });
+      e.finish(684);
+      const w = this.addChip({ app: 'weather', title: "Checking today's forecast", tool: 'get_weather' });
+      w.finish(803);
+      this.openReply();
+      this.typeInto(this.replyRef, 'Three unread — nothing urgent. Nineteen degrees and clear until this evening.', 20);
+    }
+  }
+
+  renderVals() {
+    if (!this._waveLoop) {
+      this._waveLoop = setInterval(() => this.drawWave(), 55);
+    }
+    return {
+      stageRef: this.stageRef, hudRef: this.hudRef, ringRef: this.ringRef,
+      glyphMicRef: this.glyphMicRef, glyphThinkRef: this.glyphThinkRef, glyphSpeakRef: this.glyphSpeakRef,
+      eyebrowRef: this.eyebrowRef, transcriptRef: this.transcriptRef, waveRef: this.waveRef,
+      railZoneRef: this.railZoneRef, railLabelRef: this.railLabelRef, railRef: this.railRef,
+      replyZoneRef: this.replyZoneRef, replyRef: this.replyRef, detailRef: this.detailRef,
+      scanRef: this.scanRef,
+      menuOpen: this.state.menuOpen,
+      onToggleMenu: () => this.setState(s => ({ menuOpen: !s.menuOpen })),
+      onRunTurn: () => this.runTurn(),
+      onJumpListening: () => this.jump('listening'),
+      onJumpThinking: () => this.jump('thinking'),
+      onJumpSpeaking: () => this.jump('speaking'),
+      onJumpWeather: () => this.weatherTurn(),
+      onJumpConfirm: () => this.showConfirm(),
+      onJumpFailure: () => this.showFailure()
+    };
+  }
+}
+</script>
+</body>
+</html>

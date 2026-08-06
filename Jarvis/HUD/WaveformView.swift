@@ -26,7 +26,7 @@ struct WaveformView: View {
                     )
                     canvas.fill(
                         Path(roundedRect: rect, cornerRadius: barWidth / 2),
-                        with: .color(HUDTheme.alert.opacity(0.55 + Double(amplitude) * 0.45))
+                        with: .color(HUDTheme.accent.opacity(0.55 + Double(amplitude) * 0.45))
                     )
                 }
             }
