@@ -2,7 +2,7 @@
 
 Native macOS voice assistant: hold ⌥Space, speak, Claude answers in a British
 voice (ElevenLabs) and executes tools on the machine. The full spec lives in
-the build plan; work proceeds in phases (currently: **Phase 1 — skeleton**).
+the build plan; work proceeds in phases (currently: **Phase 4 — tools**).
 
 ## Layout
 
@@ -136,7 +136,22 @@ Entitlements are generated **from `project.yml`** — `xcodegen` overwrites
    Known limits: the word or two that triggers detection is lost (a rolling
    pre-roll buffer would recover it), and on speakers JARVIS can hear itself
    and cut its own sentence off — hence the sensitivity slider in Settings.
-4. ⬜ Tier 1 tools + tool loop + confirmation gate + audit log.
+4. 🟡 Tools. Tier 1 tools (reminders, calendar, weather, apps, Spotlight, scoped
+   files, clipboard, volume, URLs, shortcuts, `display_detail`,
+   `request_confirmation`), the tool-use loop with concurrent execution and an
+   8-round cap, the confirmation gate, and the JSONL audit log.
+
+   Acceptance **passed**: "Remind me to submit the physics prac at 4pm tomorrow,
+   and what's the weather tomorrow?" ran `create_reminder` and `get_weather`
+   concurrently in one turn, both succeeding.
+
+   Deviation: `get_weather` uses Open-Meteo, not WeatherKit — WeatherKit needs an
+   entitlement tied to a registered App ID and a paid Apple Developer account,
+   impossible for a self-signed local build. Swapping back replaces one
+   `execute`.
+
+   **Unverified**: a deliberate approve/decline click on the gate. It provably
+   holds and waits, but see "The HUD steals clicks" below.
 5–9. ⬜ Memory, AppleScript/shell, MCP, computer use, polish.
 
 ## The HUD steals clicks
