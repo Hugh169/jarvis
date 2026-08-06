@@ -47,6 +47,7 @@ struct APIKeysView: View {
         do {
             try store(anthropicKey, as: .anthropicAPIKey)
             try store(elevenLabsKey, as: .elevenLabsAPIKey)
+            AppState.shared.invalidateKeyCache()
             statusMessage = "Saved."
         } catch {
             statusMessage = "Keychain error: \(error)"

@@ -10,6 +10,24 @@ public enum ModelTier: String, CaseIterable, Sendable, Codable {
 
     public var modelID: String { rawValue }
 
+    /// Short names for the CLI harness and Settings.
+    public init?(shortName: String) {
+        switch shortName.lowercased() {
+        case "fast", "haiku": self = .fast
+        case "standard", "sonnet": self = .standard
+        case "deep", "opus": self = .deep
+        default: return nil
+        }
+    }
+
+    public var displayName: String {
+        switch self {
+        case .fast: "Haiku 4.5 — fastest"
+        case .standard: "Sonnet 5 — default"
+        case .deep: "Opus 5 — deepest"
+        }
+    }
+
     /// Per-response output cap. Voice replies are short; deep/agentic turns get room.
     public var defaultMaxTokens: Int {
         switch self {

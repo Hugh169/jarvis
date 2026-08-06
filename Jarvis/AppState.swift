@@ -39,7 +39,14 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(selectedVoiceID, forKey: Self.voiceKey) }
     }
 
+    /// Which model answers. Sonnet is the spec's default; Haiku is materially
+    /// faster to first token, which is what the latency budget is made of.
+    @Published var modelTier: ModelTier = .standard {
+        didSet { UserDefaults.standard.set(modelTier.rawValue, forKey: Self.tierKey) }
+    }
+
     private static let voiceKey = "selectedVoiceID"
+    private static let tierKey = "modelTier"
 
     /// Rolling conversation context sent with each turn.
     private(set) var history: [Anthropic.MessageParam] = []
@@ -59,6 +66,10 @@ final class AppState: ObservableObject {
 
     private init() {
         selectedVoiceID = UserDefaults.standard.string(forKey: Self.voiceKey)
+        if let raw = UserDefaults.standard.string(forKey: Self.tierKey),
+           let tier = ModelTier(rawValue: raw) {
+            modelTier = tier
+        }
         stateTask = Task { [weak self] in
             guard let stream = await self?.engine.states() else { return }
             for await state in stream {
@@ -131,6 +142,32 @@ final class AppState: ObservableObject {
         confirmationHandler = nil
         pendingConfirmation = nil
         handler(approved)
+    }
+
+    /// Keys are cached after the first successful read: `SecItemCopyMatching`
+    /// is not free and sits directly on the turn's latency path, so re-reading
+    /// it every turn spends the budget for nothing. Cleared when Settings
+    /// writes a new key.
+    private var cachedKeys: [KeychainStore.Key: String] = [:]
+
+    func apiKey(_ key: KeychainStore.Key) async -> String? {
+        if let cached = cachedKeys[key] { return cached }
+        guard let value = try? await keychain.value(for: key), !value.isEmpty else { return nil }
+        cachedKeys[key] = value
+        return value
+    }
+
+    /// Called after Settings saves, so the next turn picks up the change.
+    func invalidateKeyCache() {
+        cachedKeys.removeAll()
+    }
+
+    /// Warms the key cache so the first turn doesn't pay for it.
+    func preloadKeys() {
+        Task { [weak self] in
+            _ = await self?.apiKey(.anthropicAPIKey)
+            _ = await self?.apiKey(.elevenLabsAPIKey)
+        }
     }
 
     /// Records a completed exchange for context on later turns.

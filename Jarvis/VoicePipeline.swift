@@ -144,12 +144,11 @@ final class VoicePipeline {
     // MARK: Responding
 
     private func respond(to transcript: String) async {
-        trace("respond: reading keys")
-        let keychain = appState.keychain
-        let anthropicRead = await Self.withTimeout(seconds: 20) {
-            try await keychain.value(for: .anthropicAPIKey)
+        // Cached after the first read, so this is normally instant.
+        let anthropicRead = await Self.withTimeout(seconds: 20) { [appState] in
+            await appState.apiKey(.anthropicAPIKey)
         }
-        guard let anthropicKey = anthropicRead ?? nil, !anthropicKey.isEmpty else {
+        guard let anthropicKey = anthropicRead ?? nil else {
             await fail(
                 anthropicRead == nil
                     ? "The Keychain didn't respond. Approve JARVIS's access when macOS asks, then try again."
@@ -157,54 +156,50 @@ final class VoicePipeline {
             )
             return
         }
-        let elevenRead = await Self.withTimeout(seconds: 10) {
-            try await keychain.value(for: .elevenLabsAPIKey)
-        }
-        let elevenKey = (elevenRead ?? nil) ?? ""
-        trace("respond: keys read")
+        let elevenKey = await appState.apiKey(.elevenLabsAPIKey) ?? ""
         let voiceID = appState.selectedVoiceID
 
         let brain = AnthropicClient(apiKey: anthropicKey, debug: { DebugLog.write($0) })
         let speaker = ElevenLabsClient(apiKey: elevenKey)
 
-        // Open the TTS socket up front so it isn't on the critical path when
-        // the first sentence lands. Bounded: a socket that never completes its
-        // handshake would otherwise hang the whole turn with no error, so a
-        // failure here degrades to a text-only reply.
-        var session: ElevenLabsClient.Session?
-        if !elevenKey.isEmpty, let voiceID {
-            trace("respond: opening tts socket")
-            session = try? await speaker.synthesize(voiceID: voiceID)
-            if let opening = session {
-                let opened = await Self.withTimeout(seconds: 4) {
-                    try await opening.open()
-                    return true
-                }
-                if opened == nil {
-                    trace("tts socket timed out — continuing without voice")
-                    opening.cancel()
-                    session = nil
-                }
+        // Opening the TTS socket takes ~250ms. Doing it before sending the
+        // model request put that time on the critical path for no reason — the
+        // two are independent, so they overlap now. Bounded: a socket that
+        // never finishes its handshake would otherwise hang the turn silently,
+        // so a failure here degrades to a text-only reply.
+        let sessionTask = Task { () -> ElevenLabsClient.Session? in
+            guard !elevenKey.isEmpty, let voiceID else { return nil }
+            guard let opening = try? await speaker.synthesize(voiceID: voiceID) else { return nil }
+            let opened = await Self.withTimeout(seconds: 4) {
+                try await opening.open()
+                return true
             }
-        }
-
-        trace("voice=\(voiceID ?? "none") elevenKey=\(elevenKey.isEmpty ? "missing" : "present") session=\(session == nil ? "nil" : "open")")
-
-        if let session {
-            startPlayback(from: session)
+            guard opened != nil else {
+                opening.cancel()
+                return nil
+            }
+            return opening
         }
 
         appState.replyText = ""
         var chunker = SentenceChunker()
         var spoken = ""
 
+        // Fire the model first: its first token is the long pole.
         metrics.requestSent = .now
+        let tier = appState.modelTier
         let stream = await brain.stream(
-            model: ModelTier.standard.modelID,
+            model: tier.modelID,
             system: SystemPrompt.blocks(),
             messages: appState.history + [.user(transcript)],
-            maxTokens: ModelTier.standard.defaultMaxTokens
+            maxTokens: tier.defaultMaxTokens
         )
+
+        let session = await sessionTask.value
+        trace("model=\(tier.modelID) voice=\(voiceID ?? "none") session=\(session == nil ? "nil" : "open")")
+        if let session {
+            startPlayback(from: session)
+        }
 
         trace("request sent")
         do {

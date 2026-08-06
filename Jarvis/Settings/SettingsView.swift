@@ -1,5 +1,6 @@
 import SwiftUI
 import KeyboardShortcuts
+import JarvisBrain
 
 struct SettingsView: View {
     var body: some View {
@@ -18,8 +19,22 @@ struct SettingsView: View {
 }
 
 struct GeneralSettingsView: View {
+    @ObservedObject private var appState = AppState.shared
+
     var body: some View {
         Form {
+            Section("Model") {
+                Picker("Answers with:", selection: $appState.modelTier) {
+                    ForEach(ModelTier.allCases, id: \.self) { tier in
+                        Text(tier.displayName).tag(tier)
+                    }
+                }
+                Text("Haiku answers in about a second; Sonnet takes roughly twice "
+                     + "as long but reasons better. Measured on this Mac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Activation") {
                 KeyboardShortcuts.Recorder("Push to talk (hold) / toggle (tap):", name: .pushToTalk)
                 KeyboardShortcuts.Recorder("Panic (cancel everything):", name: .panic)
