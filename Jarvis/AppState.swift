@@ -51,6 +51,15 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(bargeInEnabled, forKey: Self.bargeEnabledKey) }
     }
 
+    /// True while the typed-input field is open.
+    @Published var isComposing = false
+    @Published var composedText = ""
+
+    /// After a reply, keep listening briefly so a follow-up needs no hotkey.
+    @Published var followUpEnabled: Bool = true {
+        didSet { UserDefaults.standard.set(followUpEnabled, forKey: Self.followUpKey) }
+    }
+
     /// Every tool reports what it would have done and changes nothing (spec §7).
     @Published var dryRunEnabled: Bool = false {
         didSet { UserDefaults.standard.set(dryRunEnabled, forKey: Self.dryRunKey) }
@@ -68,6 +77,7 @@ final class AppState: ObservableObject {
     private static let bargeEnabledKey = "bargeInEnabled"
     private static let bargeSensitivityKey = "bargeInSensitivity"
     private static let dryRunKey = "dryRunEnabled"
+    private static let followUpKey = "followUpEnabled"
 
     /// Rolling conversation context sent with each turn.
     private(set) var history: [Anthropic.MessageParam] = []
@@ -99,6 +109,9 @@ final class AppState: ObservableObject {
             bargeInSensitivity = UserDefaults.standard.float(forKey: Self.bargeSensitivityKey)
         }
         dryRunEnabled = UserDefaults.standard.bool(forKey: Self.dryRunKey)
+        if UserDefaults.standard.object(forKey: Self.followUpKey) != nil {
+            followUpEnabled = UserDefaults.standard.bool(forKey: Self.followUpKey)
+        }
         stateTask = Task { [weak self] in
             guard let stream = await self?.engine.states() else { return }
             for await state in stream {
@@ -113,8 +126,12 @@ final class AppState: ObservableObject {
 
         guard state == .idle else {
             hud.show()
+            // Escape is a global hotkey; claim it only while JARVIS is on
+            // screen so it behaves normally in every other app otherwise.
+            HotkeyManager.setDismissHotkeyEnabled(true)
             return
         }
+        HotkeyManager.setDismissHotkeyEnabled(false)
 
         // Turn over: release the microphone. It is held open through thinking
         // and speaking so barge-in can hear you, but holding it while idle
@@ -309,6 +326,75 @@ final class AppState: ObservableObject {
                 beginListening()
             }
         }
+    }
+
+    // MARK: Typed input
+
+    /// Opens the typed-input field. Works from idle or mid-reply: typing is an
+    /// explicit instruction, so like the push-to-talk key it interrupts.
+    func beginComposing() {
+        Task {
+            switch await engine.state {
+            case .speaking, .thinking:
+                await pipeline.interruptForComposing()
+            case .listening:
+                await pipeline.cancelListening()
+            case .idle:
+                resetTurnContent()
+            }
+            composedText = ""
+            isComposing = true
+            transcriptIsPartial = true
+            if await engine.state == .idle {
+                await engine.handle(.listenStarted)
+            }
+        }
+    }
+
+    func submitComposed() {
+        let text = composedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            cancelComposing()
+            return
+        }
+        isComposing = false
+        composedText = ""
+        turnTask?.cancel()
+        turnTask = Task { [weak self] in
+            guard let self else { return }
+            await self.pipeline.runTextTurn(text)
+        }
+    }
+
+    func cancelComposing() {
+        isComposing = false
+        composedText = ""
+        dismiss()
+    }
+
+    /// Escape: stop whatever is happening and put the HUD away. Unlike panic
+    /// this is an ordinary dismissal, so it leaves conversation history intact
+    /// and a follow-up can still pick up the thread.
+    func dismiss() {
+        isComposing = false
+        composedText = ""
+        turnTask?.cancel()
+        turnTask = nil
+        pipeline.stop()
+        hideNow()
+        Task { await engine.handle(.cancelled) }
+    }
+
+    /// Reopens listening straight after a reply, keeping the HUD up.
+    func beginFollowUpListening() async {
+        hideTask?.cancel()
+        transcript = ""
+        transcriptIsPartial = true
+        lastError = nil
+        activityLog.clear()
+        activities = []
+        await engine.handle(.listenStarted)
+        await pipeline.beginFollowUp()
     }
 
     /// Puts the HUD into listening without opening the microphone.

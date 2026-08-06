@@ -12,6 +12,8 @@ struct MenuBarView: View {
             appState.toggleListening()
         }
 
+        Button("Type to JARVIS…") { appState.beginComposing() }
+
         Divider()
 
         Button("Demo: full turn") { appState.runDemoTurn() }

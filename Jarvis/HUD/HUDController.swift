@@ -12,6 +12,9 @@ final class HUDController {
     private var heightObserver: AnyCancellable?
 
     private var mouseObserver: AnyCancellable?
+    private var composeObserver: AnyCancellable?
+    /// Displays can be added, removed or resized while the HUD is hidden.
+    private var screenObserver: NSObjectProtocol?
 
     init(appState: AppState) {
         self.appState = appState
@@ -28,21 +31,59 @@ final class HUDController {
         // hits the HUD instead — and when a confirmation is showing, that
         // silently approves a destructive action. So it is click-through
         // except when it actually needs a decision.
+        // Typing needs the panel to become key and accept keystrokes; the rest
+        // of the time it must stay out of the way and never take focus.
+        composeObserver = appState.$isComposing
+            .removeDuplicates()
+            .sink { [weak self] composing in
+                guard let self, let panel = self.panel else { return }
+                panel.acceptsTyping = composing
+                panel.ignoresMouseEvents = !composing && self.appState.pendingConfirmation == nil
+                if composing, panel.isVisible {
+                    self.makeKeyIfComposing(panel)
+                }
+            }
+
         mouseObserver = appState.$pendingConfirmation
             .map { $0 == nil }
             .removeDuplicates()
             .sink { [weak self] clickThrough in
-                self?.panel?.ignoresMouseEvents = clickThrough
+                guard let self else { return }
+                self.panel?.ignoresMouseEvents = clickThrough && !self.appState.isComposing
             }
+
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let panel = self.panel, panel.isVisible else { return }
+                self.layout(panel)
+            }
+        }
     }
 
     func show() {
         let panel = ensurePanel()
-        if !panel.isVisible {
-            position(panel, height: panel.frame.height)
-        }
+        // Always re-lay-out, not just when hidden. The old code anchored to the
+        // panel's previous top edge, so if the display changed resolution while
+        // the HUD was away it reappeared wherever the stale frame happened to
+        // land — bottom-left, on a smaller screen.
+        layout(panel)
         panel.orderFrontRegardless()
+        makeKeyIfComposing(panel)
         fade(panel, to: 1)
+    }
+
+    /// A panel only receives keystrokes once it is key, and it can only become
+    /// key once it is on screen — so this has to happen after ordering front,
+    /// not when `acceptsTyping` is first set. Without it the text field is
+    /// visible but every keystroke goes to whatever app was in front.
+    private func makeKeyIfComposing(_ panel: HUDPanel) {
+        guard appState.isComposing else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
     }
 
     func hide() {
@@ -66,34 +107,39 @@ final class HUDController {
         panel.contentView = host
         panel.alphaValue = 0
         // Click-through until something needs an answer.
-        panel.ignoresMouseEvents = appState.pendingConfirmation == nil
+        panel.ignoresMouseEvents = appState.pendingConfirmation == nil && !appState.isComposing
+        panel.acceptsTyping = appState.isComposing
         self.panel = panel
         return panel
     }
 
-    /// Grows and shrinks from the top edge. NSWindow frames are bottom-left
-    /// origin, so height changes must move the origin to keep the top still.
     private func resize(to height: CGFloat) {
         guard let panel, height > 0, abs(panel.frame.height - height) > 0.5 else { return }
-        var frame = panel.frame
-        let top = frame.maxY
-        frame.size.height = height
-        frame.origin.y = top - height
-        panel.setFrame(frame, display: true, animate: false)
+        layout(panel, height: height)
     }
 
-    private func position(_ panel: HUDPanel, height: CGFloat) {
-        // Top-centre of the screen the user is working on.
+    /// Computes the frame from the current screen every time, rather than
+    /// nudging the previous one. Anchoring to the old frame accumulated drift
+    /// and broke completely when the display geometry changed.
+    private func layout(_ panel: HUDPanel, height: CGFloat? = nil) {
+        let target = height ?? max(appState.hudContentHeight, 84 + HUDTheme.glowPadding * 2)
+
+        // The screen the user is working on: keyboard focus first, then the one
+        // under the pointer.
         let screen = NSScreen.main
             ?? NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
             ?? NSScreen.screens.first
         guard let visible = screen?.visibleFrame else { return }
+
         // The glow padding is transparent, so the visible panel still sits at
         // the intended inset rather than being pushed down by it.
-        panel.setFrameOrigin(NSPoint(
+        let frame = NSRect(
             x: visible.midX - Self.windowWidth / 2,
-            y: visible.maxY - height - Self.topInset + HUDTheme.glowPadding
-        ))
+            y: visible.maxY - target - Self.topInset + HUDTheme.glowPadding,
+            width: Self.windowWidth,
+            height: target
+        )
+        panel.setFrame(frame, display: true, animate: false)
     }
 
     private func fade(_ panel: HUDPanel, to alpha: CGFloat, completion: (() -> Void)? = nil) {

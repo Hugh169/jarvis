@@ -6,6 +6,7 @@ import JarvisCore
 /// content, and the panel grows downward from a fixed top edge.
 struct HUDView: View {
     @EnvironmentObject private var appState: AppState
+    @FocusState private var composerFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -60,24 +61,46 @@ struct HUDView: View {
             stateGlyph
 
             VStack(alignment: .leading, spacing: 5) {
-                EyebrowLabel(text: appState.turnState == .listening ? "Listening" : "You said")
-                Text(transcriptText)
-                    .font(HUDTheme.body)
-                    .foregroundStyle(appState.transcriptIsPartial ? HUDTheme.inkSecondary : HUDTheme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                    // .topLeading, not .leading: a min-height box centres its
-                    // content vertically, so a one-line transcript would sit
-                    // lower than a two-line one and the gap under the label
-                    // would change with how long you spoke.
-                    .frame(minHeight: 20, alignment: .topLeading)
+                EyebrowLabel(text: eyebrowText)
+
+                if appState.isComposing {
+                    TextField("Type your message…", text: $appState.composedText, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(HUDTheme.body)
+                        .foregroundStyle(HUDTheme.ink)
+                        .tint(HUDTheme.accent)
+                        .lineLimit(1...4)
+                        .focused($composerFocused)
+                        .onSubmit { appState.submitComposed() }
+                        .onAppear { composerFocused = true }
+                        .frame(minHeight: 20, alignment: .topLeading)
+                } else {
+                    Text(transcriptText)
+                        .font(HUDTheme.body)
+                        .foregroundStyle(appState.transcriptIsPartial ? HUDTheme.inkSecondary : HUDTheme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        // .topLeading, not .leading: a min-height box centres its
+                        // content vertically, so a one-line transcript would sit
+                        // lower than a two-line one and the gap under the label
+                        // would change with how long you spoke.
+                        .frame(minHeight: 20, alignment: .topLeading)
+                }
             }
 
             Spacer(minLength: 8)
 
-            WaveformView(levels: appState.micLevels, isActive: appState.turnState == .listening)
+            WaveformView(
+                levels: appState.micLevels,
+                isActive: appState.turnState == .listening && !appState.isComposing
+            )
         }
         .padding(.horizontal, 17)
         .padding(.vertical, 15)
+    }
+
+    private var eyebrowText: String {
+        if appState.isComposing { return "Type to JARVIS" }
+        return appState.turnState == .listening ? "Listening" : "You said"
     }
 
     private var transcriptText: String {
@@ -90,8 +113,8 @@ struct HUDView: View {
                 .fill(Color.white.opacity(0.06))
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.08)))
 
-            // Mic-hot ring, the one place red appears outside a failure.
-            if appState.turnState == .listening {
+            // Mic-hot ring — not while typing, when the mic is shut.
+            if appState.turnState == .listening && !appState.isComposing {
                 PulsingRing()
             }
 
@@ -123,7 +146,8 @@ struct HUDView: View {
     }
 
     private var glyphSymbol: String {
-        switch appState.turnState {
+        guard !appState.isComposing else { return "keyboard" }
+        return switch appState.turnState {
         case .listening: "mic.fill"
         case .thinking: "circle.dotted"
         case .speaking: "speaker.wave.2.fill"

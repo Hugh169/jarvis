@@ -8,6 +8,17 @@ extension KeyboardShortcuts.Name {
     /// system Force Quit shortcut, so the default here is ⌥Esc (rebindable in
     /// Settings).
     static let panic = Self("panic", default: .init(.escape, modifiers: [.option]))
+
+    /// Type instead of speaking.
+    static let typeToTalk = Self("typeToTalk", default: .init(.space, modifiers: [.option, .shift]))
+
+    /// Plain Escape, to dismiss whatever is on screen.
+    ///
+    /// Registered and unregistered around the HUD's visibility rather than left
+    /// installed: this is a global hotkey, so while it is active Escape does not
+    /// reach any other app. That is only acceptable while JARVIS is actually on
+    /// screen and asking for attention.
+    static let dismiss = Self("dismiss", default: .init(.escape))
 }
 
 /// Global hotkey wiring. Uses Carbon hotkeys via KeyboardShortcuts, so no
@@ -32,6 +43,25 @@ final class HotkeyManager {
         }
         KeyboardShortcuts.onKeyDown(for: .panic) { [weak self] in
             self?.appState.panic()
+        }
+        KeyboardShortcuts.onKeyDown(for: .typeToTalk) { [weak self] in
+            self?.appState.beginComposing()
+        }
+        KeyboardShortcuts.onKeyDown(for: .dismiss) { [weak self] in
+            self?.appState.dismiss()
+        }
+
+        // Escape stays disabled until the HUD is up — see the note on the name.
+        KeyboardShortcuts.disable(.dismiss)
+    }
+
+    /// Escape is only claimed while JARVIS is visible, so it behaves normally
+    /// in every other app the rest of the time.
+    static func setDismissHotkeyEnabled(_ enabled: Bool) {
+        if enabled {
+            KeyboardShortcuts.enable(.dismiss)
+        } else {
+            KeyboardShortcuts.disable(.dismiss)
         }
     }
 

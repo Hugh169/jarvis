@@ -73,6 +73,30 @@ the CLT toolchain automatically, so they test even if the licence lapses.
 isn't registered with LaunchServices, so `MenuBarExtra` has nothing to attach to
 and no menu bar icon appears. Always build the `.app`.
 
+## Interaction
+
+| | |
+|---|---|
+| ⌥Space | Push to talk (hold), or tap to toggle. Mid-reply it interrupts. |
+| ⌥⇧Space | Type instead of speaking. |
+| Escape | Dismiss, at any point in a turn. |
+| ⌥Escape | Panic — cancel everything. |
+
+Escape is a *global* hotkey, so it is registered only while the HUD is on screen
+and unregistered the moment it hides. Leaving it installed would swallow Escape
+in every other app.
+
+Typing requires the HUD panel to become key, which a `.nonactivatingPanel`
+normally refuses. `HUDPanel.acceptsTyping` flips `canBecomeKey`, and the panel
+must be ordered on screen *before* it can be made key — setting the flag alone
+leaves the field visible but inert, with keystrokes going to the app behind.
+
+After a reply the microphone reopens for five seconds so a follow-up needs no
+hotkey. History already carried context across turns; this only removes the
+keypress. Both listening modes have a no-speech timeout — the VAD reports the
+*end* of speech, which needs a start, so without one an open mic and a silent
+room waited forever.
+
 ## Commands
 
 ```sh

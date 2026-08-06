@@ -25,6 +25,20 @@ final class HUDPanel: NSPanel {
         animationBehavior = .none // fades are driven by HUDController
     }
 
-    override var canBecomeKey: Bool { false }
+    /// Normally false — the HUD must never steal focus from what you are doing.
+    /// Typing is the one exception: a panel that cannot become key receives no
+    /// keystrokes, so the text field would be uneditable.
+    var acceptsTyping = false {
+        didSet {
+            guard acceptsTyping != oldValue else { return }
+            if acceptsTyping {
+                makeKeyAndOrderFront(nil)
+            } else {
+                resignKey()
+            }
+        }
+    }
+
+    override var canBecomeKey: Bool { acceptsTyping }
     override var canBecomeMain: Bool { false }
 }

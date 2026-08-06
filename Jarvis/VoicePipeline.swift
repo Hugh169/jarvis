@@ -35,6 +35,17 @@ final class VoicePipeline {
     /// Loudest frame this utterance — logged alongside the threshold so a
     /// mis-detection can be diagnosed from real numbers rather than guessed at.
     private var peakRMS: Float = 0
+    /// Ends a turn where nothing was ever said. Without it, opening the mic and
+    /// staying quiet leaves it listening indefinitely — the VAD only reports an
+    /// *end* of speech, which needs a start first.
+    private var noSpeechTask: Task<Void, Never>?
+    private var heardSpeech = false
+
+    /// How long to wait for anything at all before giving up.
+    private static let openingSilenceTimeout: Duration = .seconds(8)
+    /// Shorter after a reply: the mic is open speculatively, not because the
+    /// user asked for it, so it should get out of the way quickly.
+    private static let followUpSilenceTimeout: Duration = .seconds(5)
 
     /// What the audio thread should do with each buffer. The mic stays live for
     /// the whole turn — barge-in depends on still hearing the room while JARVIS
@@ -82,6 +93,68 @@ final class VoicePipeline {
 
         guard await startTranscriber() else { return }
         await startCaptureIfNeeded()
+        armNoSpeechTimeout(Self.openingSilenceTimeout)
+    }
+
+    /// Reopens the mic after a reply so a follow-up needs no hotkey. History
+    /// already carries the previous turns, so context survives.
+    func beginFollowUp() async {
+        metrics = TurnMetrics()
+        vad.reset()
+        vadClock = 0
+        endOfSpeechDetected = false
+        peakRMS = 0
+        // The reply just finished playing; let the speakers clear.
+        ignoreInputUntil = Date.now.addingTimeInterval(0.35)
+
+        guard await startTranscriber() else { return }
+        await startCaptureIfNeeded()
+        armNoSpeechTimeout(Self.followUpSilenceTimeout)
+        trace("follow-up window open")
+    }
+
+    private func armNoSpeechTimeout(_ duration: Duration) {
+        heardSpeech = false
+        noSpeechTask?.cancel()
+        noSpeechTask = Task { [weak self] in
+            try? await Task.sleep(for: duration)
+            guard !Task.isCancelled, let self, !self.heardSpeech else { return }
+            self.trace("nothing said — closing the turn")
+            self.appState.dismiss()
+        }
+    }
+
+    private func cancelNoSpeechTimeout() {
+        noSpeechTask?.cancel()
+        noSpeechTask = nil
+    }
+
+    /// Stops listening without ending the whole turn — used when typed input
+    /// takes over from the microphone.
+    func cancelListening() async {
+        cancelNoSpeechTimeout()
+        router.update(mode: .idle, transcriber: nil)
+        transcriber?.cancel()
+        transcriber = nil
+        capture.stop()
+        captureRunning = false
+    }
+
+    /// Push-to-talk's sibling for typing: cut the reply, drop the turn, but
+    /// leave the mic shut since the user is about to type.
+    func interruptForComposing() async {
+        cancelNoSpeechTimeout()
+        router.update(mode: .idle, transcriber: nil)
+        playback.stopAndFlush()
+        ttsSession?.cancel()
+        ttsSession = nil
+        turnTask?.cancel()
+        turnTask = nil
+        transcriber?.cancel()
+        transcriber = nil
+        capture.stop()
+        captureRunning = false
+        await appState.engine.handle(.bargeIn)
     }
 
     /// Fresh transcriber for a new utterance. The capture engine is untouched —
@@ -154,7 +227,11 @@ final class VoicePipeline {
                 guard !self.endOfSpeechDetected else { return }
                 self.peakRMS = max(self.peakRMS, rms)
                 let event = self.vad.process(rms: rms, at: self.vadClock)
-                if event == .speechStarted { self.trace("speech detected") }
+                if event == .speechStarted {
+                    self.heardSpeech = true
+                    self.cancelNoSpeechTimeout()
+                    self.trace("speech detected")
+                }
                 if event == .speechEnded {
                     self.endOfSpeechDetected = true
                     self.metrics.endOfSpeech = .now
@@ -195,6 +272,7 @@ final class VoicePipeline {
     /// promptly rather than after the next await.
     private func interrupt(reason: String) async {
         trace("interrupt: \(reason)")
+        cancelNoSpeechTimeout()
         router.update(mode: .idle, transcriber: nil)
 
         playback.stopAndFlush()
@@ -236,6 +314,7 @@ final class VoicePipeline {
     private func endListeningAndRespond() async {
         // The mic keeps running: barge-in needs to hear the room while JARVIS
         // is thinking and speaking. Only the routing changes.
+        cancelNoSpeechTimeout()
         router.update(mode: .awaitingReply, transcriber: nil)
         trace("mic still live, barge-in \(appState.bargeInEnabled ? "armed" : "off")")
         guard let transcriber else { return }
@@ -423,7 +502,17 @@ final class VoicePipeline {
         if session == nil {
             // No voice configured: the turn is complete once the text is in.
             await appState.engine.handle(.speechFinished)
+            await offerFollowUp()
         }
+    }
+
+    /// After a reply, reopen the mic briefly so the next thing said continues
+    /// the same conversation without reaching for the hotkey.
+    private func offerFollowUp() async {
+        guard appState.followUpEnabled, !appState.isComposing else { return }
+        guard appState.pendingConfirmation == nil else { return }
+        guard await appState.engine.state == .idle else { return }
+        await appState.beginFollowUpListening()
     }
 
     private func startPlayback(from session: ElevenLabsClient.Session) {
@@ -439,7 +528,9 @@ final class VoicePipeline {
             },
             onDrained: { [weak self] in
                 Task { @MainActor in
-                    await self?.appState.engine.handle(.speechFinished)
+                    guard let self else { return }
+                    await self.appState.engine.handle(.speechFinished)
+                    await self.offerFollowUp()
                 }
             }
         )
@@ -464,6 +555,7 @@ final class VoicePipeline {
     /// Stops audio and cancels the in-flight turn. Phase 3 calls this from
     /// barge-in as well as the panic key.
     func stop() {
+        cancelNoSpeechTimeout()
         router.update(mode: .idle, transcriber: nil)
         turnTask?.cancel()
         turnTask = nil
