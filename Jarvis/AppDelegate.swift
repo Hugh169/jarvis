@@ -18,6 +18,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appState.selectDefaultVoiceIfNeeded()
 
         let arguments = CommandLine.arguments
+        if arguments.contains("--settings") {
+            // Straight to Settings — the app has no Dock icon or window, so
+            // there is otherwise no way in except the menu bar. Deferred: the
+            // SwiftUI Settings scene does not exist yet at didFinishLaunching.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(600))
+                NSApp.activate(ignoringOtherApps: true)
+                let modern = Selector(("showSettingsWindow:"))
+                if NSApp.responds(to: modern) {
+                    NSApp.perform(modern, with: nil)
+                } else {
+                    NSApp.perform(Selector(("showPreferencesWindow:")), with: nil)
+                }
+            }
+        }
+
         if arguments.contains("--demo-turn") {
             appState.runDemoTurn()
         } else if arguments.contains("--demo-confirmation") {
