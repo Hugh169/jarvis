@@ -1,6 +1,8 @@
 import Foundation
 import Combine
 import JarvisCore
+import JarvisBrain
+import JarvisVoice
 
 /// UI-facing state, bridged from the ConversationEngine actor.
 @MainActor
@@ -27,6 +29,22 @@ final class AppState: ObservableObject {
     @Published var micLevels: [Float] = []
     /// Reported by HUDView so the panel can resize from a fixed top edge.
     @Published var hudContentHeight: CGFloat = 0
+    /// Surfaced in the HUD when a turn fails.
+    @Published var lastError: String?
+    /// Last turn's latency breakdown, shown in Settings.
+    @Published var lastLatencySummary: String?
+
+    /// Chosen ElevenLabs voice. Persisted so it survives relaunch.
+    @Published var selectedVoiceID: String? {
+        didSet { UserDefaults.standard.set(selectedVoiceID, forKey: Self.voiceKey) }
+    }
+
+    private static let voiceKey = "selectedVoiceID"
+
+    /// Rolling conversation context sent with each turn.
+    private(set) var history: [Anthropic.MessageParam] = []
+    /// Spec §8: keep roughly the last 20 turns.
+    private let maxHistoryMessages = 40
 
     private var activityLog = ToolActivityLog()
     private var confirmationHandler: ((Bool) -> Void)?
@@ -36,9 +54,11 @@ final class AppState: ObservableObject {
     private var hideTask: Task<Void, Never>?
 
     private lazy var hud = HUDController(appState: self)
+    private lazy var pipeline = VoicePipeline(appState: self)
     private var stateTask: Task<Void, Never>?
 
     private init() {
+        selectedVoiceID = UserDefaults.standard.string(forKey: Self.voiceKey)
         stateTask = Task { [weak self] in
             guard let stream = await self?.engine.states() else { return }
             for await state in stream {
@@ -113,12 +133,24 @@ final class AppState: ObservableObject {
         handler(approved)
     }
 
+    /// Records a completed exchange for context on later turns.
+    func appendTurn(user: String, assistant: String) {
+        history.append(.user(user))
+        if !assistant.isEmpty {
+            history.append(Anthropic.MessageParam(role: .assistant, content: .string(assistant)))
+        }
+        if history.count > maxHistoryMessages {
+            history.removeFirst(history.count - maxHistoryMessages)
+        }
+    }
+
     private func resetTurnContent() {
         transcript = ""
         transcriptIsPartial = false
         replyText = ""
         detailMarkdown = nil
         micLevels = []
+        lastError = nil
         activityLog.clear()
         activities = []
         // A cancelled turn must not leave a caller suspended forever.
@@ -130,24 +162,50 @@ final class AppState: ObservableObject {
     func beginListening() {
         resetTurnContent()
         transcriptIsPartial = true
-        Task { await engine.handle(.listenStarted) }
+        Task {
+            await engine.handle(.listenStarted)
+            await pipeline.beginListening()
+        }
     }
 
+    /// Push-to-talk release. The VAD may already have ended the utterance, in
+    /// which case the pipeline ignores this.
     func endListening() {
-        // Phase 2 will hand the transcript to the brain here. For now the turn
-        // just ends so the HUD hides.
-        hideNow()
-        Task { await engine.handle(.cancelled) }
+        Task { await pipeline.endListening() }
     }
 
     func toggleListening() {
         Task {
             if await engine.state == .listening {
-                hideNow()
-                await engine.handle(.cancelled)
+                await pipeline.endListening()
             } else {
                 beginListening()
             }
+        }
+    }
+
+    /// Runs a full turn from typed text — no microphone. See `--say`.
+    func runTextTurn(_ text: String) {
+        turnTask?.cancel()
+        resetTurnContent()
+        turnTask = Task { [weak self] in
+            guard let self else { return }
+            await self.pipeline.runTextTurn(text)
+        }
+    }
+
+    /// Picks a British voice on first run so the first turn can actually speak
+    /// without a visit to Settings.
+    func selectDefaultVoiceIfNeeded() {
+        guard selectedVoiceID == nil,
+              let key = try? keychain.get(.elevenLabsAPIKey), !key.isEmpty
+        else { return }
+
+        Task { [weak self] in
+            guard let self else { return }
+            let british = try? await ElevenLabsClient(apiKey: key).britishVoices()
+            guard let chosen = british?.first else { return }
+            self.selectedVoiceID = chosen.voiceID
         }
     }
 
@@ -174,6 +232,7 @@ final class AppState: ObservableObject {
     func panic() {
         turnTask?.cancel()
         turnTask = nil
+        pipeline.stop()
         resetTurnContent()
         hideNow()
         Task { await engine.handle(.cancelled) }

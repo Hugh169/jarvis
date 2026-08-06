@@ -8,6 +8,8 @@ struct SettingsView: View {
                 .tabItem { Label("General", systemImage: "gearshape") }
             APIKeysView()
                 .tabItem { Label("API Keys", systemImage: "key") }
+            VoiceSettingsView()
+                .tabItem { Label("Voice", systemImage: "waveform") }
             PermissionsView()
                 .tabItem { Label("Permissions", systemImage: "lock.shield") }
         }

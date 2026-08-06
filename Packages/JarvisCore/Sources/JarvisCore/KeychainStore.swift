@@ -69,6 +69,20 @@ public struct KeychainStore: Sendable {
         }
     }
 
+    /// Off-main read.
+    ///
+    /// `SecItemCopyMatching` can block for a long time — it shows the "wants to
+    /// use your confidential information" approval dialog when the app's code
+    /// signature is unfamiliar, which happens on every rebuild under ad-hoc
+    /// signing. Doing that on the main actor freezes the UI and can stop the
+    /// prompt surfacing at all, so reads on any hot path go through here.
+    public func value(for key: Key) async throws -> String? {
+        let store = self
+        return try await Task.detached(priority: .userInitiated) {
+            try store.get(key)
+        }.value
+    }
+
     public func delete(_ key: Key) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

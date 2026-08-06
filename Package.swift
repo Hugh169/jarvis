@@ -13,7 +13,7 @@ import PackageDescription
 
 let package = Package(
     name: "JarvisDev",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS("26.0")],
     dependencies: [
         .package(path: "Packages/JarvisCore"),
         .package(path: "Packages/JarvisAudio"),

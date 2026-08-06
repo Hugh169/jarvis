@@ -5,7 +5,7 @@ import PackageDescription
 // until then so the app builds fast.
 let package = Package(
     name: "JarvisMemory",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS("26.0")],
     products: [
         .library(name: "JarvisMemory", targets: ["JarvisMemory"])
     ],
