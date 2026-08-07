@@ -190,7 +190,79 @@ Entitlements are generated **from `project.yml`** — `xcodegen` overwrites
 
    **Unverified**: a deliberate approve/decline click on the gate. It provably
    holds and waits, but see "The HUD steals clicks" below.
+   **Layer 1 — live search and location** (added after Phase 4; Phase 5 memory
+   and the MCP client are deferred).
+
+   ✅ **Web search.** Anthropic's server-side tool: declared in the request,
+   never executed here, results arriving as content blocks in the same
+   response. Verified on the wire — a "news today" turn ran the search and
+   answered from it in 399 characters.
+
+   🔴 **Location and directions.** `where_am_i`, `travel_time_to`,
+   `directions_to`, `nearby` — CoreLocation and MapKit, no key or OAuth. They
+   compile, register and are covered by tests, but **do not work on this
+   build**: see below.
+
 5–9. ⬜ Memory, AppleScript/shell, MCP, computer use, polish.
+
+## Server-side tools change the shape of a turn
+
+Web search doesn't behave like the other tools, and three things had to change
+to carry it:
+
+- **The tool version follows the model.** `web_search_20260209` (the variant
+  that filters results with code before they hit the context window) is a 400
+  on Haiku 4.5 — which is the tier chosen for latency. `ModelTier.webSearchVersion`
+  falls back to the basic `web_search_20250305` there. Hardcoding either one
+  breaks half the tiers.
+- **Server blocks must survive the round trip.** `server_tool_use` and
+  `web_search_tool_result` are echoed back verbatim in the assistant turn, or
+  the model loses the results it just fetched. Text also resumes *after* a
+  search, so the assistant turn is rebuilt in arrival order rather than
+  text-then-tools.
+- **`pause_turn` is not the end of a turn.** The server-side search loop has its
+  own iteration cap; hitting it ends the response early, and it resumes by
+  re-sending with the partial assistant turn appended and *no* new user
+  message. It has its own budget (`maxContinuations`) rather than eating tool
+  rounds.
+
+A failed search is still HTTP 200 and still a well-formed block — `content`
+comes back as a single error object rather than the usual array. Code that
+assumes an array reads that as a crash.
+
+Block assembly lives in `StreamAssembler`, not `AnthropicClient`, so it can be
+tested against the bytes the API actually sends instead of against a copy of the
+logic in the test file.
+
+A searching turn costs seconds: measured 4.2s to first audio against a 1.2s
+budget. That is inherent — there is a full round trip before the first token —
+and the budget only applies to turns that don't search.
+
+## Location never gets asked for
+
+`where_am_i` and the travel tools are written and tested but return an error on
+this build. The chain of evidence, so nobody repeats it:
+
+- Location Services is **on** globally, and the app's status is
+  `notDetermined` — reported by the tool itself in the audit log, which is why
+  `LocationError.timedOut` carries the authorisation state.
+- No prompt ever appears, and **`locationd` and `tccd` never log the request at
+  all**. It isn't a denial; the request never reaches the daemon.
+- `CLLocationUpdate.liveUpdates()` was the first attempt and is worse than
+  useless here: on macOS it never requests authorisation, so it produces
+  nothing, forever, with no error. It needs an explicit `CLLocationManager`.
+- `requestWhenInUseAuthorization()` is an iOS concept — macOS has only *Always*
+  — so the call is a silent no-op. `requestAlwaysAuthorization()` is correct
+  and still produces nothing.
+- All three usage-description keys are present in the built Info.plist.
+
+Untested hypotheses, in the order worth trying: the app is `LSUIElement` with
+`.accessory` activation policy and never becomes frontmost, which historically
+blocks location prompts; or `locationd` is refusing a self-signed identity that
+isn't a Developer ID.
+
+Until it's resolved the tools fail in three seconds with something the user can
+act on, rather than making every turn wait out the twelve-second fix timeout.
 
 ## The HUD steals clicks
 
