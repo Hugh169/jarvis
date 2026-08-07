@@ -37,22 +37,20 @@ struct ToolChipView: View {
         HStack(spacing: 10) {
             ToolIconView(bundleIdentifier: activity.bundleIdentifier, symbolName: activity.symbolName)
 
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 5) {
-                    Text(activity.title)
-                        .font(.system(size: 13))
-                        .foregroundStyle(HUDTheme.ink)
-                    if group.count > 1 {
-                        Text("×\(group.count)")
-                            .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                            .foregroundStyle(HUDTheme.accent)
-                    }
+            // One line only. The tool name and arguments were a second line of
+            // grey monospace under every row, which read as noise once there
+            // were more than two or three of them — the title already says
+            // what happened, and the count says how often. Both still reach
+            // VoiceOver through the accessibility label below.
+            HStack(spacing: 5) {
+                Text(activity.title)
+                    .font(.system(size: 13))
+                    .foregroundStyle(HUDTheme.ink)
+                if group.count > 1 {
+                    Text("×\(group.count)")
+                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(HUDTheme.accent)
                 }
-                Text(group.subtitle ?? activity.toolName)
-                    .font(.system(size: 10.5, design: .monospaced))
-                    .foregroundStyle(HUDTheme.inkTertiary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
             }
 
             Spacer(minLength: 8)
@@ -103,7 +101,10 @@ struct ToolChipView: View {
     }
 
     private var accessibilityDescription: String {
-        let name = group.count > 1 ? "\(activity.title), \(group.count) times" : activity.title
+        var name = group.count > 1 ? "\(activity.title), \(group.count) times" : activity.title
+        // Carries what the row no longer shows, so a screen reader still gets
+        // the destinations and queries the sighted view dropped.
+        if let subtitle = group.subtitle { name += ", \(subtitle)" }
         return switch group.status {
         case .running: "\(name), running"
         case .awaitingConfirmation: "\(name), waiting for your confirmation"
