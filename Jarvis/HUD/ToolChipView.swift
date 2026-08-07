@@ -37,21 +37,17 @@ struct ToolChipView: View {
         HStack(spacing: 10) {
             ToolIconView(bundleIdentifier: activity.bundleIdentifier, symbolName: activity.symbolName)
 
-            // One line only. The tool name and arguments were a second line of
-            // grey monospace under every row, which read as noise once there
-            // were more than two or three of them — the title already says
-            // what happened, and the count says how often. Both still reach
-            // VoiceOver through the accessibility label below.
-            HStack(spacing: 5) {
-                Text(activity.title)
-                    .font(.system(size: 13))
-                    .foregroundStyle(HUDTheme.ink)
-                if group.count > 1 {
-                    Text("×\(group.count)")
-                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                        .foregroundStyle(HUDTheme.accent)
-                }
-            }
+            // Title and nothing else. The tool name, the arguments and the
+            // repeat count were all on the row at various points and all of it
+            // read as noise — the title says what happened, the timing says how
+            // long, and that is the whole of what a glance needs.
+            //
+            // Grouping still matters even with the count hidden: it is what
+            // turns five travel lookups into one row instead of five. The
+            // count and arguments both survive in the accessibility label.
+            Text(activity.title)
+                .font(.system(size: 13))
+                .foregroundStyle(HUDTheme.ink)
 
             Spacer(minLength: 8)
 
