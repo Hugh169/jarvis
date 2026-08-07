@@ -11,6 +11,8 @@ struct SettingsView: View {
                 .tabItem { Label("API Keys", systemImage: "key") }
             VoiceSettingsView()
                 .tabItem { Label("Voice", systemImage: "waveform") }
+            ConnectorsView()
+                .tabItem { Label("Connectors", systemImage: "app.connected.to.app.below.fill") }
             ActivitySettingsView()
                 .tabItem { Label("Activity", systemImage: "list.bullet.rectangle") }
             PermissionsView()
@@ -18,8 +20,9 @@ struct SettingsView: View {
         }
         // No fixed width: the hosting window sizes this. Constraining it
         // here squeezed the tab bar into an overflow menu, which hid
-        // API Keys entirely.
-        .frame(minWidth: 560, minHeight: 420)
+        // API Keys entirely. The minimum has to clear all six tabs, or the
+        // bar collapses to a "»" chevron and none of them are reachable.
+        .frame(minWidth: 740, minHeight: 420)
     }
 }
 

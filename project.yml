@@ -19,6 +19,7 @@ packages:
   JarvisBrain: { path: Packages/JarvisBrain }
   JarvisTools: { path: Packages/JarvisTools }
   JarvisMemory: { path: Packages/JarvisMemory }
+  JarvisConnectors: { path: Packages/JarvisConnectors }
 
 targets:
   Jarvis:
@@ -35,6 +36,7 @@ targets:
       - package: JarvisBrain
       - package: JarvisTools
       - package: JarvisMemory
+      - package: JarvisConnectors
     # Defined here, not in a hand-edited file: `entitlements.path` is an OUTPUT
     # that xcodegen rewrites on every generate.
     entitlements:

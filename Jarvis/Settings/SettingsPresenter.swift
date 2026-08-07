@@ -33,7 +33,11 @@ final class SettingsPresenter: NSObject, NSWindowDelegate {
         }
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 560),
+            // Wide enough for every tab to fit on the bar. Too narrow and
+            // SwiftUI silently collapses the overflow into a "»" chevron —
+            // which is how API Keys went missing once already, and how the
+            // whole bar vanished when Connectors was added as the sixth tab.
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false

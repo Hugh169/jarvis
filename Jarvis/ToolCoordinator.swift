@@ -2,6 +2,7 @@ import Foundation
 import JarvisCore
 import JarvisTools
 import JarvisBrain
+import JarvisConnectors
 
 /// Owns the tool registry and executes calls on behalf of a turn: confirmation
 /// gating, concurrent execution, dry-run, and the audit trail.
@@ -68,6 +69,18 @@ final class ToolCoordinator {
         try? registry.register(SetVolumeTool())
         try? registry.register(OpenURLTool())
         try? registry.register(RunShortcutTool())
+
+        // Registered whether or not an account is connected: the tool block is
+        // the front of the cached prompt prefix, so it has to be identical
+        // between turns, and appearing only after a connection would invalidate
+        // the cache mid-session. Unconnected, they return an error telling the
+        // user where to connect.
+        try? registry.register(ListGoogleEventsTool())
+        try? registry.register(CreateGoogleEventTool())
+        try? registry.register(SearchMailTool())
+        try? registry.register(ReadMailTool())
+        try? registry.register(DraftMailTool())
+        try? registry.register(SendMailTool())
 
         let appState = self.appState
         try? registry.register(DisplayDetailTool { markdown in

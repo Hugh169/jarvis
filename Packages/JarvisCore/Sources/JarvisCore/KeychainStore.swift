@@ -6,11 +6,22 @@ public struct KeychainStore: Sendable {
     public enum Key: String, CaseIterable, Sendable {
         case anthropicAPIKey = "anthropic-api-key"
         case elevenLabsAPIKey = "elevenlabs-api-key"
+        /// Google OAuth. The client id and secret identify *this app* to
+        /// Google; the refresh token is the standing grant for one account.
+        /// A desktop OAuth client's secret is not really secret — Google
+        /// documents that and requires PKCE for exactly that reason — but it
+        /// still has no business in the repository.
+        case googleClientID = "google-client-id"
+        case googleClientSecret = "google-client-secret"
+        case googleRefreshToken = "google-refresh-token"
 
         public var displayName: String {
             switch self {
             case .anthropicAPIKey: "Anthropic API key"
             case .elevenLabsAPIKey: "ElevenLabs API key"
+            case .googleClientID: "Google client ID"
+            case .googleClientSecret: "Google client secret"
+            case .googleRefreshToken: "Google refresh token"
             }
         }
     }
