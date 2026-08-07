@@ -22,6 +22,10 @@ final class VoicePipeline {
     private var transcriber: AppleTranscriber?
     private var turnTask: Task<Void, Never>?
     private var ttsSession: ElevenLabsClient.Session?
+    /// Server-side tools never reach `ToolCoordinator`, so their HUD chips are
+    /// driven straight off the content blocks instead. Keyed by the call id so
+    /// the result block closes the chip its own call opened.
+    private var serverActivities: [String: UUID] = [:]
     private var vad = EnergyVAD()
     private var bargeVAD = EnergyVAD(configuration: .bargeIn())
     private var vadClock: TimeInterval = 0
@@ -399,10 +403,12 @@ final class VoicePipeline {
         }
 
         appState.replyText = ""
+        serverActivities.removeAll()
         var chunker = SentenceChunker()
 
         let tier = appState.modelTier
         let tools = appState.tools
+        let apiTools = tools.apiTools(for: tier, webSearch: appState.webSearchEnabled)
         var messages = appState.history + [.user(transcript)]
 
         // Fire the model first: its first token is the long pole.
@@ -411,7 +417,7 @@ final class VoicePipeline {
             model: tier.modelID,
             system: SystemPrompt.blocks(extraContext: appState.turnContext()),
             messages: messages,
-            tools: tools.toolDefinitions,
+            tools: apiTools,
             maxTokens: tier.defaultMaxTokens
         )
 
@@ -424,10 +430,14 @@ final class VoicePipeline {
 
         // Tool loop: keep going while the model asks for tools, bounded so a
         // model that never settles cannot spin forever.
-        for iteration in 0..<ToolCoordinator.maxIterations {
+        var iteration = 0
+        var continuations = 0
+
+        while true {
             var assistantBlocks: [JSONValue] = []
             var toolUses: [Anthropic.ToolUse] = []
-            var text = ""
+            var pendingText = ""
+            var stopReason: String?
 
             do {
                 for try await event in stream {
@@ -438,15 +448,27 @@ final class VoicePipeline {
                             metrics.firstTextDelta = .now
                             trace("first token")
                         }
-                        text += delta
+                        pendingText += delta
                         appState.replyText += delta
                         for sentence in chunker.append(delta) {
                             try? await session?.send(text: sentence)
                         }
+
                     case .toolUse(let use):
+                        // Close the open text block first. Assistant content
+                        // has to go back in the order it was produced, and
+                        // text can resume after a tool block.
+                        Self.flush(&pendingText, into: &assistantBlocks)
                         toolUses.append(use)
-                    case .finished:
-                        break
+                        assistantBlocks.append(use.contentBlock)
+
+                    case .serverBlock(let block):
+                        Self.flush(&pendingText, into: &assistantBlocks)
+                        assistantBlocks.append(block)
+                        noteServerBlock(block)
+
+                    case .finished(let reason):
+                        stopReason = reason
                     }
                 }
             } catch is CancellationError {
@@ -458,12 +480,30 @@ final class VoicePipeline {
                 return
             }
 
-            if !text.isEmpty {
-                assistantBlocks.append(.object([
-                    "type": .string("text"), "text": .string(text),
-                ]))
+            Self.flush(&pendingText, into: &assistantBlocks)
+
+            // A server-side tool ran out of its own iteration budget mid-turn.
+            // Resuming means re-sending the conversation with the partial
+            // assistant turn appended and *no* new user message — the server
+            // picks up where it stopped. It isn't a tool round, so it gets its
+            // own budget rather than eating into the tool loop's.
+            if stopReason == "pause_turn" {
+                guard continuations < ToolCoordinator.maxContinuations else {
+                    trace("hit the pause_turn continuation cap")
+                    break
+                }
+                continuations += 1
+                trace("pause_turn — resuming (\(continuations))")
+                messages.append(Anthropic.MessageParam(role: .assistant, content: .array(assistantBlocks)))
+                stream = await brain.stream(
+                    model: tier.modelID,
+                    system: SystemPrompt.blocks(extraContext: appState.turnContext()),
+                    messages: messages,
+                    tools: apiTools,
+                    maxTokens: tier.defaultMaxTokens
+                )
+                continue
             }
-            assistantBlocks.append(contentsOf: toolUses.map(\.contentBlock))
 
             guard !toolUses.isEmpty else {
                 trace("stream complete, \(appState.replyText.count) chars after \(iteration) tool round(s)")
@@ -475,7 +515,8 @@ final class VoicePipeline {
             let results = await tools.execute(toolUses)
             messages.append(Anthropic.MessageParam(role: .user, content: .array(results)))
 
-            if iteration == ToolCoordinator.maxIterations - 1 {
+            iteration += 1
+            if iteration >= ToolCoordinator.maxIterations {
                 trace("hit the tool-iteration cap")
                 let apology = "I got stuck going round in circles there, so I have stopped."
                 appState.replyText += (appState.replyText.isEmpty ? "" : " ") + apology
@@ -487,7 +528,7 @@ final class VoicePipeline {
                 model: tier.modelID,
                 system: SystemPrompt.blocks(extraContext: appState.turnContext()),
                 messages: messages,
-                tools: tools.toolDefinitions,
+                tools: apiTools,
                 maxTokens: tier.defaultMaxTokens
             )
         }
@@ -504,6 +545,43 @@ final class VoicePipeline {
             await appState.engine.handle(.speechFinished)
             await offerFollowUp()
         }
+    }
+
+    /// Closes the open text block so assistant content is carried back in the
+    /// order the model produced it. Text can resume after a tool block, so this
+    /// runs at every boundary rather than once at the end.
+    private static func flush(_ text: inout String, into blocks: inout [JSONValue]) {
+        guard !text.isEmpty else { return }
+        blocks.append(.object(["type": .string("text"), "text": .string(text)]))
+        text = ""
+    }
+
+    /// Mirrors a server-side tool call into the HUD: the `server_tool_use`
+    /// block opens a chip, the matching result block closes it.
+    private func noteServerBlock(_ block: JSONValue) {
+        guard let type = block["type"]?.stringValue else { return }
+
+        if type == "server_tool_use" {
+            guard let id = block["id"]?.stringValue,
+                  let name = block["name"]?.stringValue else { return }
+            serverActivities[id] = appState.beginActivity(toolName: name)
+            if let query = block["input"]?["query"]?.stringValue {
+                trace("\(name): \(query)")
+            }
+            return
+        }
+
+        // Every server result block names the call it answers.
+        guard let id = block["tool_use_id"]?.stringValue,
+              let activity = serverActivities.removeValue(forKey: id) else { return }
+
+        // A failed search is still HTTP 200 and still a well-formed block: the
+        // difference is that `content` comes back as a single error object
+        // rather than the usual array of results.
+        let failure = block["content"]?["error_code"]?.stringValue
+        let status: ToolActivity.Status = failure.map { .failed($0) } ?? .succeeded
+        appState.finishActivity(id: activity, status: status)
+        if let failure { trace("server tool failed: \(failure)") }
     }
 
     /// After a reply, reopen the mic briefly so the next thing said continues

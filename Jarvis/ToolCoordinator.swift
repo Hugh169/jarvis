@@ -14,6 +14,10 @@ final class ToolCoordinator {
     /// tools without settling on an answer.
     static let maxIterations = 8
 
+    /// A server-side search can exhaust its own iteration budget and come back
+    /// `pause_turn`, which we resume. Bounded for the same reason as above.
+    static let maxContinuations = 5
+
     init(appState: AppState) {
         self.appState = appState
         registerAll()
@@ -21,6 +25,24 @@ final class ToolCoordinator {
 
     var toolDefinitions: [JSONValue] { registry.apiDefinitions }
     var toolNames: [String] { registry.toolNames }
+
+    /// The full tool block for a request: everything JARVIS executes, plus any
+    /// server-side tools the model may call directly.
+    ///
+    /// Order is load-bearing — the tool block is the front of the cached prompt
+    /// prefix, so it must be byte-identical between turns. The server tool goes
+    /// last, and its version depends on the model, but changing model
+    /// invalidates the cache anyway.
+    func apiTools(for tier: ModelTier, webSearch: Bool) -> [JSONValue] {
+        var definitions = registry.apiDefinitions
+        if webSearch {
+            definitions.append(ServerTool.webSearch(
+                version: tier.webSearchVersion,
+                maxUses: 6
+            ))
+        }
+        return definitions
+    }
 
     private func registerAll() {
         // Order is stable and matters: the tool block is part of the cached
@@ -31,6 +53,10 @@ final class ToolCoordinator {
         try? registry.register(CreateEventTool())
         try? registry.register(ListEventsTool())
         try? registry.register(GetWeatherTool())
+        try? registry.register(WhereAmITool())
+        try? registry.register(TravelTimeTool())
+        try? registry.register(DirectionsTool())
+        try? registry.register(NearbyTool())
         try? registry.register(OpenAppTool())
         try? registry.register(QuitAppTool())
         try? registry.register(ListRunningAppsTool())

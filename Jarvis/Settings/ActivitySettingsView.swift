@@ -16,10 +16,16 @@ struct ActivitySettingsView: View {
                          + "Useful while testing new behaviour.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    Toggle("Search the web for current information", isOn: $appState.webSearchEnabled)
+                    Text("Lets Claude look things up mid-answer. Queries leave this Mac, "
+                         + "and a turn that searches takes a few seconds longer to start speaking.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)
-            .frame(height: 130)
+            .frame(height: 210)
 
             Divider()
 

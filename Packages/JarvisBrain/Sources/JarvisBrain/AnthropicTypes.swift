@@ -83,7 +83,12 @@ public enum Anthropic {
     public struct StreamEvent: Decodable, Sendable {
         public var type: String
         public var delta: Delta?
-        public var contentBlock: ContentBlockStart?
+        /// Kept as raw JSON rather than a narrow struct. Server-side tools add
+        /// block types we don't model (`server_tool_use`,
+        /// `web_search_tool_result`) and those have to be echoed back verbatim
+        /// on the next request, so decoding into a fixed shape would silently
+        /// discard the parts that matter.
+        public var contentBlock: JSONValue?
         public var index: Int?
 
         enum CodingKeys: String, CodingKey {
@@ -105,11 +110,9 @@ public enum Anthropic {
         }
     }
 
-    public struct ContentBlockStart: Decodable, Sendable {
-        public var type: String
-        public var id: String?
-        public var name: String?
-    }
+    /// Block types the client turns into text or tool calls itself. Everything
+    /// else is a server-side block that is passed through untouched.
+    static let handledBlockTypes: Set<String> = ["text", "tool_use"]
 
     /// A completed tool call from the model.
     public struct ToolUse: Sendable, Equatable, Identifiable {

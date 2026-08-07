@@ -59,6 +59,11 @@ targets:
         NSRemindersUsageDescription: JARVIS creates and completes reminders for you.
         NSContactsUsageDescription: JARVIS looks up contacts to send messages and email.
         NSAppleEventsUsageDescription: JARVIS automates apps like Mail and Messages via AppleScript.
+        # macOS has no when-in-use tier, so the Always keys are the ones that
+        # matter here; the bare key is what older macOS reads.
+        NSLocationUsageDescription: JARVIS uses your location for directions, travel times and nearby places.
+        NSLocationAlwaysUsageDescription: JARVIS uses your location for directions, travel times and nearby places.
+        NSLocationAlwaysAndWhenInUseUsageDescription: JARVIS uses your location for directions, travel times and nearby places.
     settings:
       base:
         # App Sandbox stays OFF (shell, automation, synthetic input are

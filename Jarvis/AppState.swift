@@ -65,6 +65,14 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(dryRunEnabled, forKey: Self.dryRunKey) }
     }
 
+    /// Lets Claude search the web mid-turn. Off means JARVIS answers only from
+    /// what it already knows and what the local tools return — worth having as
+    /// a switch, since a search sends the query off the machine and adds a
+    /// round trip before the first word.
+    @Published var webSearchEnabled: Bool = true {
+        didSet { UserDefaults.standard.set(webSearchEnabled, forKey: Self.webSearchKey) }
+    }
+
     /// 0 = only a raised voice interrupts, 1 = twitchy. Needs to be adjustable:
     /// on speakers the mic hears JARVIS itself, and the right threshold depends
     /// on the room and the volume.
@@ -78,6 +86,7 @@ final class AppState: ObservableObject {
     private static let bargeSensitivityKey = "bargeInSensitivity"
     private static let dryRunKey = "dryRunEnabled"
     private static let followUpKey = "followUpEnabled"
+    private static let webSearchKey = "webSearchEnabled"
 
     /// Rolling conversation context sent with each turn.
     private(set) var history: [Anthropic.MessageParam] = []
@@ -111,6 +120,9 @@ final class AppState: ObservableObject {
         dryRunEnabled = UserDefaults.standard.bool(forKey: Self.dryRunKey)
         if UserDefaults.standard.object(forKey: Self.followUpKey) != nil {
             followUpEnabled = UserDefaults.standard.bool(forKey: Self.followUpKey)
+        }
+        if UserDefaults.standard.object(forKey: Self.webSearchKey) != nil {
+            webSearchEnabled = UserDefaults.standard.bool(forKey: Self.webSearchKey)
         }
         stateTask = Task { [weak self] in
             guard let stream = await self?.engine.states() else { return }

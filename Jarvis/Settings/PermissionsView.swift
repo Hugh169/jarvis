@@ -3,6 +3,7 @@ import AVFoundation
 import Speech
 import EventKit
 import Contacts
+import CoreLocation
 import ApplicationServices
 
 /// Live status for every permission the app needs, with deep links into
@@ -96,6 +97,12 @@ struct PermissionsView: View {
                 granted: grantedContacts(CNContactStore.authorizationStatus(for: .contacts)),
                 settingsAnchor: "Privacy_Contacts"
             ),
+            Item(
+                id: "location",
+                name: "Location Services",
+                granted: grantedLocation(CLLocationManager().authorizationStatus),
+                settingsAnchor: "Privacy_LocationServices"
+            ),
         ]
     }
 
@@ -118,6 +125,16 @@ struct PermissionsView: View {
     private func grantedEventKit(_ status: EKAuthorizationStatus) -> Bool? {
         switch status {
         case .fullAccess, .writeOnly: true
+        case .denied, .restricted: false
+        default: nil
+        }
+    }
+
+    /// macOS has no "when in use" distinction for a Mac app — a grant is
+    /// `authorizedAlways` or nothing.
+    private func grantedLocation(_ status: CLAuthorizationStatus) -> Bool? {
+        switch status {
+        case .authorizedAlways, .authorized: true
         case .denied, .restricted: false
         default: nil
         }
