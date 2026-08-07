@@ -1,4 +1,5 @@
 import Foundation
+import JarvisCore
 import EventKit
 
 /// All EventKit work happens inside this actor.
@@ -142,18 +143,24 @@ public actor EventKitAccess {
         return "Created \"\(title)\" on \(start.formatted(date: .abbreviated, time: .shortened))."
     }
 
-    public func listEvents(start: Date, days: Double) async throws -> [String] {
+    /// Structured rather than pre-formatted, so the same lookup can feed both
+    /// the model's text and the HUD's timeline without either re-parsing the
+    /// other's prose.
+    public func listEvents(start: Date, days: Double) async throws -> [CalendarEvent] {
         try await ensureCalendar()
         let predicate = store.predicateForEvents(
             withStart: start, end: start.addingTimeInterval(days * 86400), calendars: nil
         )
         return store.events(matching: predicate)
             .sorted { $0.startDate < $1.startDate }
-            .map { event in
-                let time = event.isAllDay
-                    ? "all day"
-                    : event.startDate.formatted(date: .abbreviated, time: .shortened)
-                return "- \(event.title ?? "Untitled") (\(time))"
+            .map {
+                CalendarEvent(
+                    title: $0.title ?? "Untitled",
+                    start: $0.startDate,
+                    end: $0.endDate,
+                    isAllDay: $0.isAllDay,
+                    location: $0.location?.isEmpty == false ? $0.location : nil
+                )
             }
     }
 }
@@ -284,6 +291,28 @@ public struct CreateEventTool: JarvisTool {
     }
 }
 
+/// One event, as the calendar has it.
+public struct CalendarEvent: Sendable, Hashable {
+    public let title: String
+    public let start: Date
+    public let end: Date
+    public let isAllDay: Bool
+    public let location: String?
+
+    public init(title: String, start: Date, end: Date, isAllDay: Bool, location: String?) {
+        self.title = title
+        self.start = start
+        self.end = end
+        self.isAllDay = isAllDay
+        self.location = location
+    }
+
+    /// How the time should be said, which is not how it should be sorted.
+    var spokenTime: String {
+        isAllDay ? "all day" : start.formatted(date: .omitted, time: .shortened)
+    }
+}
+
 public struct ListEventsTool: JarvisTool {
     public static let name = "list_events"
     public static let description = "List calendar events in a window. Defaults to the next 24 hours."
@@ -295,19 +324,89 @@ public struct ListEventsTool: JarvisTool {
         ],
     ]
 
-    public init() {}
+    /// Draws what was found, without waiting to be asked.
+    ///
+    /// `display_schedule` exists and the model still would not call it — not
+    /// with a system prompt rule, not with the trigger spelled out in the
+    /// tool's own description, not with an instruction attached to this tool's
+    /// result. Three layers of asking, ignored, and the day read out loud
+    /// item by item every time.
+    ///
+    /// So it stops being a decision. If the calendar was consulted, the
+    /// timeline is drawn — the model's only job is to say something useful
+    /// about it. The model may still call `display_schedule` itself to add
+    /// travel legs, which replaces this.
+    private let present: (@Sendable (Schedule) async -> Void)?
+
+    public init(present: (@Sendable (Schedule) async -> Void)? = nil) {
+        self.present = present
+    }
 
     public func execute(_ input: JSONValue) async throws -> ToolResult {
         let start = input["start"]?.stringValue.flatMap(ISO8601.date(from:)) ?? Date()
         let days = input["days"]?.numberValue ?? 1
         do {
-            let lines = try await EventKitAccess.shared.listEvents(start: start, days: days)
+            let events = try await EventKitAccess.shared.listEvents(start: start, days: days)
+            guard !events.isEmpty else {
+                return ToolResult(content: "Nothing in the calendar for that period.")
+            }
+
+            await present?(Self.schedule(for: events, from: start, days: days))
+
+            let lines = events.map { "- \($0.title) (\($0.spokenTime))" }
             return ToolResult(
-                content: lines.isEmpty ? "Nothing in the calendar for that period." : lines.joined(separator: "\n")
+                content: lines.joined(separator: "\n") + """
+
+
+                    These are already on screen as a timeline. Don't read them \
+                    out — say one sentence about the shape of the day.
+                    """
             )
         } catch {
             return .error(error.localizedDescription)
         }
+    }
+
+    static func schedule(for events: [CalendarEvent], from start: Date, days: Double) -> Schedule {
+        let clashing = overlapping(events)
+        return Schedule(
+            title: title(from: start, days: days),
+            items: events.map { event in
+                ScheduleItem(
+                    time: event.spokenTime,
+                    title: event.title,
+                    location: event.location,
+                    clashes: clashing.contains(event)
+                )
+            }
+        )
+    }
+
+    /// Computed here rather than asked of the model: it has the start and end
+    /// of everything, so whether two things overlap is arithmetic, not
+    /// judgement. All-day events are excluded — they overlap everything by
+    /// definition and flagging them would make the whole day amber.
+    static func overlapping(_ events: [CalendarEvent]) -> Set<CalendarEvent> {
+        var clashing: Set<CalendarEvent> = []
+        let timed = events.filter { !$0.isAllDay }
+        for (index, event) in timed.enumerated() {
+            for other in timed.dropFirst(index + 1) {
+                guard event.start < other.end, other.start < event.end else { continue }
+                clashing.insert(event)
+                clashing.insert(other)
+            }
+        }
+        return clashing
+    }
+
+    static func title(from start: Date, days: Double) -> String {
+        let calendar = Calendar.current
+        if days > 1.5 {
+            return "Next \(Int(days.rounded())) days"
+        }
+        if calendar.isDateInToday(start) { return "Today" }
+        if calendar.isDateInTomorrow(start) { return "Tomorrow" }
+        return start.formatted(.dateTime.weekday(.wide).day().month(.wide))
     }
 }
 

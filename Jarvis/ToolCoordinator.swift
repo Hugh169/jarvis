@@ -52,7 +52,9 @@ final class ToolCoordinator {
         try? registry.register(ListRemindersTool())
         try? registry.register(CompleteReminderTool())
         try? registry.register(CreateEventTool())
-        try? registry.register(ListEventsTool())
+        try? registry.register(ListEventsTool { schedule in
+            await MainActor.run { AppState.shared.schedule = schedule }
+        })
         try? registry.register(GetWeatherTool())
         try? registry.register(WhereAmITool())
         try? registry.register(TravelTimeTool())

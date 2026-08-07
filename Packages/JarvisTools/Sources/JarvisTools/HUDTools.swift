@@ -43,11 +43,19 @@ public struct DisplayDetailTool: JarvisTool {
 public struct DisplayScheduleTool: JarvisTool {
     public static let name = "display_schedule"
     public static let description = """
-        Draw a day or a sequence of events as a timeline on screen — times, \
-        what's on, where, and how long it takes to get between them. Prefer \
-        this over display_detail whenever the answer is a schedule or an \
-        itinerary. Say one sentence aloud about the shape of it; the timeline \
-        carries the rest. Set clashes on anything that overlaps.
+        Draw events on a timeline on screen — times, what's on, where, and how \
+        long it takes to get between them.
+
+        Call this whenever you are about to describe two or more things \
+        happening at different times: a day, a week, an itinerary, a plan. In \
+        particular, call it immediately after any tool returns a list of \
+        events, before you say anything about them. If you are about to speak \
+        a time out loud, you should be calling this instead.
+
+        Then say one sentence about the shape of it — what's tight, what \
+        clashes, what to leave early for. The timeline carries the times, \
+        places and travel; never read those aloud. Set clashes on anything \
+        that overlaps.
         """
     public static let inputSchema: JSONValue = [
         "type": "object",

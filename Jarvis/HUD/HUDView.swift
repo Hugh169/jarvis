@@ -18,8 +18,7 @@ struct HUDView: View {
                 toolRail
             }
 
-            if !appState.replyText.isEmpty || appState.detailMarkdown != nil
-                || appState.schedule != nil {
+            if showsReply {
                 Divider().overlay(HUDTheme.hairline)
                 replySection
             }
@@ -220,11 +219,27 @@ struct HUDView: View {
 
     // MARK: Reply
 
+    /// The reply is spoken, not written. Printing it too made the panel a
+    /// transcript of its own audio — and the model's throat-clearing on the way
+    /// to an answer is much easier to ignore when heard than when set in type
+    /// under a heading.
+    ///
+    /// The exception is a silent JARVIS: with no voice configured there is
+    /// nothing to hear, and a HUD that shows neither the answer nor a way to
+    /// read it is simply broken.
+    private var isMute: Bool { appState.selectedVoiceID == nil }
+
+    private var showsReply: Bool {
+        appState.schedule != nil
+            || appState.detailMarkdown != nil
+            || (isMute && !appState.replyText.isEmpty)
+    }
+
     private var replySection: some View {
         VStack(alignment: .leading, spacing: 5) {
             EyebrowLabel(text: "JARVIS")
 
-            if !appState.replyText.isEmpty {
+            if isMute, !appState.replyText.isEmpty {
                 Text(appState.replyText)
                     .font(HUDTheme.body)
                     .foregroundStyle(HUDTheme.ink)

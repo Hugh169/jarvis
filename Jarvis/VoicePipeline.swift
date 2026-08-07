@@ -448,9 +448,18 @@ final class VoicePipeline {
                             metrics.firstTextDelta = .now
                             trace("first token")
                         }
-                        pendingText += delta
-                        appState.replyText += delta
-                        for sentence in chunker.append(delta) {
+                        // Each round's text is appended to the last round's,
+                        // and the model has no idea anything preceded it — so
+                        // without this the join reads "…for you.Now let me…",
+                        // and the TTS says it that way too.
+                        var text = delta
+                        if pendingText.isEmpty, let last = appState.replyText.last,
+                           !last.isWhitespace, !delta.hasPrefix(" ") {
+                            text = " " + delta
+                        }
+                        pendingText += text
+                        appState.replyText += text
+                        for sentence in chunker.append(text) {
                             try? await session?.send(text: sentence)
                         }
 
