@@ -22,6 +22,10 @@ public struct ToolActivity: Identifiable, Sendable, Equatable {
     public let toolName: String
     /// Human phrasing, shown in the UI face ("Adding a reminder").
     public let title: String
+    /// The distinguishing argument — a destination, a search query. Five
+    /// `travel_time_to` chips in a row are identical without it, which tells
+    /// you five things happened and nothing about what.
+    public let subtitle: String?
     /// Bundle id of the app being driven, for the real icon. Nil for tools that
     /// aren't app-backed (web search, memory).
     public let bundleIdentifier: String?
@@ -35,6 +39,7 @@ public struct ToolActivity: Identifiable, Sendable, Equatable {
         id: UUID = UUID(),
         toolName: String,
         title: String,
+        subtitle: String? = nil,
         bundleIdentifier: String?,
         symbolName: String,
         status: Status = .running,
@@ -44,6 +49,7 @@ public struct ToolActivity: Identifiable, Sendable, Equatable {
         self.id = id
         self.toolName = toolName
         self.title = title
+        self.subtitle = subtitle
         self.bundleIdentifier = bundleIdentifier
         self.symbolName = symbolName
         self.status = status

@@ -34,6 +34,9 @@ enum HUDTheme {
     /// Denser here to keep the text readable over a busy window; the tint is
     /// the reference's.
     static let scrim = Color(red: 0.055, green: 0.067, blue: 0.102).opacity(0.90)
+    /// The scrim without its transparency — for punching a hole through a
+    /// filled shape so it reads as a ring rather than a dot.
+    static let panelCore = Color(red: 0.055, green: 0.067, blue: 0.102)
 
     static let hairline = Color.white.opacity(0.10)
     static let chipFill = Color.white.opacity(0.045)

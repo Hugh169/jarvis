@@ -86,6 +86,9 @@ final class ToolCoordinator {
         try? registry.register(DisplayDetailTool { markdown in
             await MainActor.run { appState.detailMarkdown = markdown }
         })
+        try? registry.register(DisplayScheduleTool { schedule in
+            await MainActor.run { appState.schedule = schedule }
+        })
         try? registry.register(RequestConfirmationTool { summary, verb in
             await appState.requestConfirmation(
                 ConfirmationRequest(
@@ -131,8 +134,29 @@ final class ToolCoordinator {
         return collected.sorted { $0.index < $1.index }.map(\.block)
     }
 
+    /// The one argument worth putting on a chip.
+    ///
+    /// Five `travel_time_to` chips in a row are indistinguishable without it —
+    /// you can see that five things happened and nothing about what. Bulk
+    /// arguments (markdown, file bodies) are deliberately not candidates.
+    static func subtitle(for use: Anthropic.ToolUse) -> String? {
+        guard case .object(let fields) = use.input else { return nil }
+        let identifying = [
+            "destination", "query", "location", "name", "title",
+            "to", "app_name", "app", "url", "path", "shortcut",
+        ]
+        for key in identifying {
+            if let value = fields[key]?.stringValue, !value.isEmpty {
+                return String(value.prefix(64))
+            }
+        }
+        return nil
+    }
+
     private func runOne(_ use: Anthropic.ToolUse) async -> JSONValue {
-        let activityID = appState.beginActivity(toolName: use.name)
+        let activityID = appState.beginActivity(
+            toolName: use.name, subtitle: Self.subtitle(for: use)
+        )
         let started = Date.now
         let needsConfirmation = registry.requiresConfirmation(use.name)
 

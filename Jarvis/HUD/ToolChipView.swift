@@ -29,28 +29,37 @@ struct ToolIconView: View {
 }
 
 struct ToolChipView: View {
-    let activity: ToolActivity
+    let group: ToolActivityGroup
+
+    private var activity: ToolActivity { group.first }
 
     var body: some View {
         HStack(spacing: 10) {
             ToolIconView(bundleIdentifier: activity.bundleIdentifier, symbolName: activity.symbolName)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(activity.title)
-                    .font(.system(size: 13))
-                    .foregroundStyle(HUDTheme.ink)
-                Text(activity.toolName)
+                HStack(spacing: 5) {
+                    Text(activity.title)
+                        .font(.system(size: 13))
+                        .foregroundStyle(HUDTheme.ink)
+                    if group.count > 1 {
+                        Text("×\(group.count)")
+                            .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(HUDTheme.accent)
+                    }
+                }
+                Text(group.subtitle ?? activity.toolName)
                     .font(.system(size: 10.5, design: .monospaced))
                     .foregroundStyle(HUDTheme.inkTertiary)
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                    .truncationMode(.tail)
             }
 
             Spacer(minLength: 8)
 
             HStack(spacing: 7) {
                 elapsedText
-                StatusDot(status: activity.status)
+                StatusDot(status: group.status)
             }
         }
         .padding(.horizontal, 11)
@@ -66,7 +75,7 @@ struct ToolChipView: View {
 
     @ViewBuilder
     private var elapsedText: some View {
-        switch activity.status {
+        switch group.status {
         case .failed(let reason):
             Text(reason)
                 .font(HUDTheme.mono)
@@ -77,7 +86,8 @@ struct ToolChipView: View {
                 .font(HUDTheme.mono)
                 .foregroundStyle(HUDTheme.confirm)
         case .running:
-            // Ticks while the tool works; frozen once it finishes.
+            // Ticks while the tool works; frozen once it finishes. A group
+            // still running shows the wall clock of the one in flight.
             TimelineView(.periodic(from: .now, by: 0.1)) { context in
                 Text(Self.format(activity.elapsed(now: context.date)))
                     .font(HUDTheme.mono)
@@ -85,7 +95,7 @@ struct ToolChipView: View {
                     .monospacedDigit()
             }
         case .succeeded:
-            Text(Self.format(activity.elapsed()))
+            Text(Self.format(group.elapsed()))
                 .font(HUDTheme.mono)
                 .foregroundStyle(HUDTheme.inkSecondary)
                 .monospacedDigit()
@@ -93,11 +103,12 @@ struct ToolChipView: View {
     }
 
     private var accessibilityDescription: String {
-        switch activity.status {
-        case .running: "\(activity.title), running"
-        case .awaitingConfirmation: "\(activity.title), waiting for your confirmation"
-        case .succeeded: "\(activity.title), done in \(Self.format(activity.elapsed()))"
-        case .failed(let reason): "\(activity.title), failed: \(reason)"
+        let name = group.count > 1 ? "\(activity.title), \(group.count) times" : activity.title
+        return switch group.status {
+        case .running: "\(name), running"
+        case .awaitingConfirmation: "\(name), waiting for your confirmation"
+        case .succeeded: "\(name), done in \(Self.format(group.elapsed()))"
+        case .failed(let reason): "\(name), failed: \(reason)"
         }
     }
 

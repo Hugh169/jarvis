@@ -17,6 +17,7 @@ struct MenuBarView: View {
         Divider()
 
         Button("Demo: full turn") { appState.runDemoTurn() }
+        Button("Demo: schedule timeline") { appState.runDemoSchedule() }
         Button("Demo: confirmation gate") { appState.runDemoConfirmation() }
 
         Divider()

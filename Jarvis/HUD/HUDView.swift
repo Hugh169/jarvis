@@ -18,12 +18,19 @@ struct HUDView: View {
                 toolRail
             }
 
-            if !appState.replyText.isEmpty || appState.detailMarkdown != nil {
+            if !appState.replyText.isEmpty || appState.detailMarkdown != nil
+                || appState.schedule != nil {
                 Divider().overlay(HUDTheme.hairline)
                 replySection
             }
         }
         .frame(width: HUDTheme.width, alignment: .leading)
+        // Never let the panel squeeze its own content. The window's height
+        // follows this view's reported height, so while it catches up the
+        // proposal can be shorter than the content needs — and without this
+        // SwiftUI compresses, which is what put the "Working" label on top of
+        // a long transcript.
+        .fixedSize(horizontal: false, vertical: true)
         .background {
             let shape = RoundedRectangle(cornerRadius: HUDTheme.cornerRadius, style: .continuous)
             shape.fill(.ultraThinMaterial)
@@ -79,6 +86,12 @@ struct HUDView: View {
                         .font(HUDTheme.body)
                         .foregroundStyle(appState.transcriptIsPartial ? HUDTheme.inkSecondary : HUDTheme.ink)
                         .fixedSize(horizontal: false, vertical: true)
+                        // A long dictated prompt otherwise pushes everything
+                        // that matters — the tools and the answer — off the
+                        // bottom of the screen. You just said it; three lines
+                        // is enough to confirm it was heard correctly.
+                        .lineLimit(3)
+                        .truncationMode(.tail)
                         // .topLeading, not .leading: a min-height box centres its
                         // content vertically, so a one-line transcript would sit
                         // lower than a two-line one and the gap under the label
@@ -181,8 +194,11 @@ struct HUDView: View {
                         .transition(.opacity)
                 }
 
-                ForEach(appState.activities) { activity in
-                    ToolChipView(activity: activity)
+                // Grouped: a turn that plans a day fires travel_time_to once
+                // per leg, and five identical chips is five rows of vertical
+                // space saying one thing.
+                ForEach(ToolActivityGroup.group(appState.activities)) { group in
+                    ToolChipView(group: group)
                         .transition(.asymmetric(
                             insertion: .move(edge: .top).combined(with: .opacity),
                             removal: .opacity
@@ -215,27 +231,45 @@ struct HUDView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            if let schedule = appState.schedule {
+                Divider()
+                    .overlay(HUDTheme.hairline)
+                    .padding(.top, 6)
+
+                boundedDetail {
+                    ScheduleView(schedule: schedule)
+                }
+            }
+
             if let detail = appState.detailMarkdown {
                 Divider()
                     .overlay(HUDTheme.hairline)
                     .padding(.top, 6)
 
-                // Rendered directly rather than in a ScrollView: a scroll view
-                // has no intrinsic content height, so inside this self-sizing
-                // panel it collapses and the detail never appears. The panel is
-                // meant to grow to fit anyway.
-                Text(attributed(detail))
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(HUDTheme.inkSecondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 5)
+                boundedDetail {
+                    MarkdownBlocks(markdown: detail)
+                        .textSelection(.enabled)
+                }
             }
         }
         .padding(.horizontal, 17)
         .padding(.top, 13)
         .padding(.bottom, 15)
+    }
+
+    /// Detail is rendered at full height, never scrolled.
+    ///
+    /// A scroll view here cannot work: the panel is `ignoresMouseEvents` so
+    /// that clicks aimed at whatever is underneath aren't stolen by a window
+    /// sitting where toolbars live — and that makes it scroll-through too. The
+    /// wheel never reaches the HUD. Making it reachable would mean accepting
+    /// mouse events, which is exactly the behaviour the click-through rule
+    /// exists to prevent.
+    @ViewBuilder
+    private func boundedDetail<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 5)
     }
 
     /// Expanding ring behind the mic glyph while the input is hot.

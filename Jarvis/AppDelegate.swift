@@ -30,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if arguments.contains("--demo-turn") {
             appState.runDemoTurn()
+        } else if arguments.contains("--demo-schedule") {
+            appState.runDemoSchedule()
         } else if arguments.contains("--demo-confirmation") {
             appState.runDemoConfirmation()
         } else if let index = arguments.firstIndex(of: "--say"),

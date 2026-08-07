@@ -24,6 +24,9 @@ final class AppState: ObservableObject {
     @Published var replyText = ""
     /// Markdown from the display_detail tool.
     @Published var detailMarkdown: String?
+    /// A day drawn as a timeline. Sits alongside `detailMarkdown` rather than
+    /// replacing it — the assistant picks the form that fits the answer.
+    @Published var schedule: Schedule?
     @Published private(set) var activities: [ToolActivity] = []
     @Published var pendingConfirmation: ConfirmationRequest?
     /// Recent input RMS for the meter.
@@ -154,12 +157,14 @@ final class AppState: ObservableObject {
         // reply is readable, and longer when detail is on screen. Always
         // bounded — a HUD that can get stuck on screen is worse than one that
         // leaves too early.
-        let delay: Duration = detailMarkdown == nil ? .seconds(2.5) : .seconds(10)
+        let hasDetail = detailMarkdown != nil || schedule != nil
+        let delay: Duration = hasDetail ? .seconds(10) : .seconds(2.5)
         hideTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled, let self, self.turnState == .idle else { return }
             self.hud.hide()
             self.detailMarkdown = nil
+            self.schedule = nil
         }
     }
 
@@ -172,11 +177,12 @@ final class AppState: ObservableObject {
 
     // MARK: Tool activity
 
-    func beginActivity(toolName: String) -> UUID {
+    func beginActivity(toolName: String, subtitle: String? = nil) -> UUID {
         let descriptor = ToolPresentation.descriptor(for: toolName)
         let activity = ToolActivity(
             toolName: toolName,
             title: descriptor.title,
+            subtitle: subtitle,
             bundleIdentifier: descriptor.bundleIdentifier,
             symbolName: descriptor.symbolName
         )
@@ -240,6 +246,7 @@ final class AppState: ObservableObject {
         transcriptIsPartial = true
         replyText = ""
         detailMarkdown = nil
+        schedule = nil
         lastError = nil
         activityLog.clear()
         activities = []
@@ -294,6 +301,7 @@ final class AppState: ObservableObject {
         transcriptIsPartial = false
         replyText = ""
         detailMarkdown = nil
+        schedule = nil
         micLevels = []
         lastError = nil
         activityLog.clear()
@@ -452,6 +460,14 @@ final class AppState: ObservableObject {
         turnTask = Task { [weak self] in
             guard let self else { return }
             await HUDDemo.runTurn(on: self)
+        }
+    }
+
+    func runDemoSchedule() {
+        turnTask?.cancel()
+        turnTask = Task { [weak self] in
+            guard let self else { return }
+            await HUDDemo.runSchedule(on: self)
         }
     }
 

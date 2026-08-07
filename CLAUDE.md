@@ -301,6 +301,42 @@ isn't a Developer ID.
 Until it's resolved the tools fail in three seconds with something the user can
 act on, rather than making every turn wait out the twelve-second fix timeout.
 
+## Two channels, and one of them is drawn
+
+`display_detail` can only ever produce words, so anything with a shape read as
+a wall of text. `display_schedule` is the second visual channel: the assistant
+hands over what happens and when, and `ScheduleView` draws it — time gutter,
+a rail with a node per event, travel legs as dashed connectors carrying a mode
+glyph and minutes, clashes in amber. The assistant chooses the form, which is
+why it's a separate tool rather than a rendering mode on the old one.
+
+Amber still means exactly one thing: this needs your attention. On a timeline
+that's an overlap; everywhere else it's a confirmation.
+
+`MarkdownBlocks` renders the detail pane. `AttributedString(markdown:)` keeps
+block structure only as a `presentationIntent` that `Text` ignores, so "##
+Your Week Ahead" rendered with its hashes showing. It deliberately does **not**
+fold consecutive lines the way markdown does — the assistant writes a fact per
+line here, and folding runs them into a sentence nobody wrote.
+
+## The panel must never be asked to squeeze
+
+The window's height follows the view's reported height, so while it catches up
+the height proposal can be smaller than the content needs — and SwiftUI's
+answer to too little room is to compress. That is what put the "Working" label
+on top of a long transcript. `.fixedSize(horizontal: false, vertical: true)` on
+the root makes the content refuse to shrink; the window catches up a frame
+later.
+
+Long transcripts are capped at three lines. You just said it — three lines
+confirms it was heard, and the rest of the panel is for the answer.
+
+**The detail pane cannot scroll.** Not an oversight: the panel is
+`ignoresMouseEvents` so it doesn't steal clicks aimed at whatever is beneath
+it, and that makes it scroll-through as well — the wheel never arrives. Making
+it scrollable means accepting mouse events, which is the exact behaviour the
+click-through rule exists to prevent. Content renders at full height instead.
+
 ## The HUD steals clicks
 
 The HUD floats at top-centre, which is exactly where app toolbars, tab bars and
