@@ -40,6 +40,15 @@ public actor GoogleAccount {
 
     private var accessToken: String?
     private var expiresAt: Date?
+    /// Held after the first read so the Keychain is touched once per session
+    /// rather than on every API call.
+    ///
+    /// `SecItemCopyMatching` blocks for as long as the "wants to use your
+    /// confidential information" dialog is up, and it blocks *inside this
+    /// actor* — so every queued request waits behind it. That is what made a
+    /// three-message mail search take sixteen seconds, and why doing the
+    /// fetches concurrently made it worse rather than better.
+    private var refreshToken: String?
 
     public init(keychain: KeychainStore = KeychainStore(), session: URLSession = .shared) {
         self.keychain = keychain
@@ -64,6 +73,7 @@ public actor GoogleAccount {
         let tokens = try await flow().authorize(scopes: Self.scopes, openBrowser: openBrowser)
         guard let refresh = tokens.refreshToken else { throw OAuthFlow.FlowError.noRefreshToken }
         try keychain.set(refresh, for: .googleRefreshToken)
+        refreshToken = refresh
         accessToken = tokens.accessToken
         expiresAt = tokens.expiresAt
     }
@@ -73,18 +83,28 @@ public actor GoogleAccount {
     /// revoked on Google's side.
     public func disconnect() throws {
         try keychain.delete(.googleRefreshToken)
+        refreshToken = nil
         accessToken = nil
         expiresAt = nil
     }
 
     // MARK: Requests
 
-    private func validAccessToken() async throws -> String {
-        if let accessToken, let expiresAt, expiresAt > .now { return accessToken }
-        guard let refresh = (try? keychain.get(.googleRefreshToken)) ?? nil, !refresh.isEmpty else {
+    private func storedRefreshToken() async throws -> String {
+        if let refreshToken { return refreshToken }
+        // Off-main and off this actor's critical path: an approval dialog can
+        // hold this for as long as the user takes to answer it.
+        let stored = try? await keychain.value(for: .googleRefreshToken)
+        guard let token = stored ?? nil, !token.isEmpty else {
             throw AccountError.notConnected
         }
-        let tokens = try await flow().refresh(using: refresh)
+        refreshToken = token
+        return token
+    }
+
+    private func validAccessToken() async throws -> String {
+        if let accessToken, let expiresAt, expiresAt > .now { return accessToken }
+        let tokens = try await flow().refresh(using: try await storedRefreshToken())
         accessToken = tokens.accessToken
         expiresAt = tokens.expiresAt
         return tokens.accessToken

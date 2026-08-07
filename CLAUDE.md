@@ -203,7 +203,44 @@ Entitlements are generated **from `project.yml`** — `xcodegen` overwrites
    compile, register and are covered by tests, but **do not work on this
    build**: see below.
 
+   ✅ **Google connectors.** OAuth inside the app — calendar and Gmail tools,
+   verified end to end against a real account.
+
 5–9. ⬜ Memory, AppleScript/shell, MCP, computer use, polish.
+
+## Google connectors belong to the app, not to macOS
+
+Nothing is registered with Internet Accounts, so no other app on this Mac can
+see or use the grant. The refresh token is a Keychain item of JARVIS's; the
+access token stays in memory and never reaches disk.
+
+- **Loopback redirect, PKCE, POSIX sockets.** Google removed the out-of-band
+  flow, so the app has to catch the redirect itself. Network.framework can't:
+  *every* `NWListener` configuration fails here with `EINVAL` before reaching
+  `.ready`, including a bare `NWListener(using: .tcp)` — confirmed outside the
+  sandbox, so it isn't a permissions artefact. `socket`/`bind`/`listen` works
+  first time. Non-loopback peers are refused at accept time.
+- **Scopes are least privilege**: `calendar.events`, `gmail.readonly`,
+  `gmail.compose`. Nothing that can delete. Google has no draft-only scope, so
+  `send_mail` is gated behind the confirmation prompt in the tool layer.
+- **Consent-screen audience decides everything.** *Internal* (Workspace domain)
+  means the grant never expires. *External* expires refresh tokens after seven
+  days, needs test users, and needs Google verification to escape — `readonly`
+  is a restricted scope. This project is Internal.
+- Mail is the canonical untrusted input: anyone can send you some, and it flows
+  into a model that runs tools on this machine. Nothing here acts on what it
+  reads.
+
+### Never read the Keychain on a hot path
+
+`SecItemCopyMatching` blocks for as long as the approval dialog is up, and if
+it's called from inside an actor every queued request waits behind it.
+`GoogleAccount` originally read the refresh token on *every* API call, which
+made a three-message mail search take sixteen seconds — and made fetching the
+messages concurrently *slower* than doing them one at a time, because the extra
+concurrency only piled up behind the same blocking read. The token is cached in
+the actor after the first read now. `KeychainStore.value(for:)` is the async,
+off-main accessor and is what any repeated read should use.
 
 ## Server-side tools change the shape of a turn
 

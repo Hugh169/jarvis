@@ -57,9 +57,12 @@ struct ConnectorsView: View {
                 Text("""
                     From a Google Cloud project of your own — console.cloud.google.com, \
                     Credentials, Create OAuth client ID, type Desktop app. Enable the \
-                    Google Calendar API and the Gmail API on the same project, and add \
-                    yourself as a test user on the consent screen. Both values are stored \
-                    in the Keychain, never in the app's files.
+                    Google Calendar API and the Gmail API on the same project first, or \
+                    every call returns 403 after a sign-in that looked fine. If the \
+                    consent screen's audience is External rather than Internal, add \
+                    yourself as a test user there too — and expect to reconnect weekly, \
+                    since Google expires those grants after seven days. Both values are \
+                    stored in the Keychain, never in the app's files.
                     """)
                     .font(.caption)
                     .foregroundStyle(.secondary)

@@ -112,6 +112,36 @@ public struct SearchMailTool: JarvisTool {
         let messages: [Reference]?
     }
 
+    /// Named rather than a tuple: the region-based isolation checker can't
+    /// reason about destructuring one out of a task group.
+    private struct Summary: Sendable {
+        let index: Int
+        let line: String
+    }
+
+    /// One message's headers. A failure here is reported in place rather than
+    /// thrown, so a single unreadable message doesn't lose the whole search.
+    private func summarise(_ id: String, index: Int) async -> Summary {
+        do {
+            let data = try await account.send(
+                "\(Gmail.base)/messages/\(id)",
+                query: [
+                    .init(name: "format", value: "metadata"),
+                    .init(name: "metadataHeaders", value: "From"),
+                    .init(name: "metadataHeaders", value: "Subject"),
+                    .init(name: "metadataHeaders", value: "Date"),
+                ]
+            )
+            let message = try JSONDecoder().decode(Gmail.Message.self, from: data)
+            let from = Gmail.header("From", in: message) ?? "unknown sender"
+            let subject = Gmail.header("Subject", in: message) ?? "(no subject)"
+            let preview = message.snippet.map { " — \($0.prefix(120))" } ?? ""
+            return Summary(index: index, line: "[\(id)] \(from): \(subject)\(preview)")
+        } catch {
+            return Summary(index: index, line: "[\(id)] (couldn't be read: \(error.localizedDescription))")
+        }
+    }
+
     public func execute(_ input: JSONValue) async throws -> ToolResult {
         guard let query = input["query"]?.stringValue, !query.isEmpty else {
             return .error("No search query given.")
@@ -130,22 +160,17 @@ public struct SearchMailTool: JarvisTool {
             return ToolResult(content: "No mail matching \"\(query)\".")
         }
 
+        // Gmail's list endpoint returns ids only, so each message costs a
+        // second round trip and this is the slow part of the tool.
+        //
+        // Fetching them concurrently through a task group measured *worse* —
+        // same three messages, 7.1s serially against 15.9s in a group. The
+        // cause was a blocking Keychain read inside `GoogleAccount` on every
+        // request, so the extra concurrency only piled up behind it; that read
+        // is now cached. Sequential until a measurement says otherwise.
         var lines: [String] = []
-        for reference in references {
-            let data = try await account.send(
-                "\(Gmail.base)/messages/\(reference.id)",
-                query: [
-                    .init(name: "format", value: "metadata"),
-                    .init(name: "metadataHeaders", value: "From"),
-                    .init(name: "metadataHeaders", value: "Subject"),
-                    .init(name: "metadataHeaders", value: "Date"),
-                ]
-            )
-            let message = try JSONDecoder().decode(Gmail.Message.self, from: data)
-            let from = Gmail.header("From", in: message) ?? "unknown sender"
-            let subject = Gmail.header("Subject", in: message) ?? "(no subject)"
-            let preview = message.snippet.map { " — \($0.prefix(120))" } ?? ""
-            lines.append("[\(reference.id)] \(from): \(subject)\(preview)")
+        for (index, reference) in references.enumerated() {
+            lines.append(await summarise(reference.id, index: index).line)
         }
         return ToolResult(content: lines.joined(separator: "\n"))
     }
