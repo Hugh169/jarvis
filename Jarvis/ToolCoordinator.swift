@@ -88,6 +88,9 @@ final class ToolCoordinator {
         try? registry.register(DisplayDetailTool { markdown in
             await MainActor.run { appState.detailMarkdown = markdown }
         })
+        try? registry.register(DisplayCardsTool { deck in
+            await MainActor.run { appState.cards = deck }
+        })
         try? registry.register(DisplayScheduleTool { schedule in
             await MainActor.run { appState.schedule = schedule }
         })

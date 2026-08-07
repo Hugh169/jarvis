@@ -301,6 +301,43 @@ isn't a Developer ID.
 Until it's resolved the tools fail in three seconds with something the user can
 act on, rather than making every turn wait out the twelve-second fix timeout.
 
+## The model will not call a display tool. Stop asking it.
+
+This cost a lot of iterations, so it is written down. `display_schedule`
+survived a rule in the system prompt, the trigger spelled out prescriptively in
+the tool's own description, *and* an instruction attached to the tool result at
+the exact moment of the decision — and Haiku read the day aloud item by item
+every time regardless.
+
+Two fixes, both of which take the choice away:
+
+- **Where a tool already has the data, draw it.** `list_events` returns
+  structured events and hands them to the HUD itself. Consult the calendar,
+  get a timeline.
+- **Where only the model has the answer, force it.** `Visualiser` makes a
+  second cheap Haiku call after the reply with `tool_choice` set to
+  `display_cards`; the API will not let it return anything else. It runs while
+  JARVIS is speaking, so it costs nothing on the latency budget — the panel
+  fills in under the sentence in the air.
+
+The corollary: **do not add more display tools.** More options make this worse,
+not better. `display_cards` composes a page out of blocks (facts, stat, list,
+table, note, map, image) precisely so there is one call to make.
+
+Blocks are parsed leniently — a block missing what its type needs is dropped
+rather than failing the call, because losing a row beats the model getting an
+error and reading the answer aloud. Two exceptions, both about not putting
+nonsense on screen: coordinates at Null Island or out of range are rejected
+(the signature of a required field filled in by guesswork), and images must be
+`https` with a real host, since that is the only content in this app fetched
+from wherever the model says.
+
+Maps are `MKMapSnapshotter` stills, not live map views: the panel ignores mouse
+events so nothing could be panned anyway, and a live map renders gesture and
+attribution furniture with nowhere to go. Forced to dark — the HUD is always
+dark, and a daylight map in it looks like a hole punched in the panel. Note the
+type is `MapPlace`; `MapPin` is ambiguous against MapKit's own.
+
 ## Two channels, and one of them is drawn
 
 `display_detail` can only ever produce words, so anything with a shape read as

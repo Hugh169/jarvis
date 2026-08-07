@@ -231,6 +231,7 @@ struct HUDView: View {
 
     private var showsReply: Bool {
         appState.schedule != nil
+            || appState.cards != nil
             || appState.detailMarkdown != nil
             || (isMute && !appState.replyText.isEmpty)
     }
@@ -244,6 +245,16 @@ struct HUDView: View {
                     .font(HUDTheme.body)
                     .foregroundStyle(HUDTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let cards = appState.cards {
+                Divider()
+                    .overlay(HUDTheme.hairline)
+                    .padding(.top, 6)
+
+                boundedDetail {
+                    CardsView(deck: cards)
+                }
             }
 
             if let schedule = appState.schedule {

@@ -547,6 +547,18 @@ final class VoicePipeline {
         }
         try? await session?.finish()
 
+        // Draw the answer while it is being spoken. Detached from the turn so
+        // the speech and the follow-up window aren't waiting on it — by the
+        // time the sentence in the air has finished, the panel has filled in
+        // underneath it.
+        let spoken = appState.replyText
+        Task { [weak appState] in
+            guard let appState else { return }
+            await Visualiser.illustrate(
+                question: transcript, answer: spoken, apiKey: anthropicKey, into: appState
+            )
+        }
+
         appState.appendTurn(user: transcript, assistant: appState.replyText)
 
         if session == nil {

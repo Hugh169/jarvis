@@ -58,6 +58,7 @@ public actor AnthropicClient {
         system: [Anthropic.SystemBlock],
         messages: [Anthropic.MessageParam],
         tools: [JSONValue]? = nil,
+        toolChoice: JSONValue? = nil,
         maxTokens: Int
     ) -> AsyncThrowingStream<StreamEvent, Error> {
         AsyncThrowingStream { continuation in
@@ -68,6 +69,7 @@ public actor AnthropicClient {
                         system: system,
                         messages: messages,
                         tools: tools,
+                        toolChoice: toolChoice,
                         maxTokens: maxTokens,
                         continuation: continuation
                     )
@@ -85,6 +87,7 @@ public actor AnthropicClient {
         system: [Anthropic.SystemBlock],
         messages: [Anthropic.MessageParam],
         tools: [JSONValue]?,
+        toolChoice: JSONValue?,
         maxTokens: Int,
         continuation: AsyncThrowingStream<StreamEvent, Error>.Continuation
     ) async throws {
@@ -103,6 +106,7 @@ public actor AnthropicClient {
             system: system,
             messages: messages,
             tools: tools,
+            toolChoice: toolChoice,
             stream: true
         )
         request.httpBody = try JSONEncoder().encode(body)

@@ -24,6 +24,8 @@ final class AppState: ObservableObject {
     @Published var replyText = ""
     /// Markdown from the display_detail tool.
     @Published var detailMarkdown: String?
+    /// A general visual answer — facts, figures, a map, a photo.
+    @Published var cards: CardDeck?
     /// A day drawn as a timeline. Sits alongside `detailMarkdown` rather than
     /// replacing it — the assistant picks the form that fits the answer.
     @Published var schedule: Schedule?
@@ -157,7 +159,7 @@ final class AppState: ObservableObject {
         // reply is readable, and longer when detail is on screen. Always
         // bounded — a HUD that can get stuck on screen is worse than one that
         // leaves too early.
-        let hasDetail = detailMarkdown != nil || schedule != nil
+        let hasDetail = detailMarkdown != nil || schedule != nil || cards != nil
         let delay: Duration = hasDetail ? .seconds(10) : .seconds(2.5)
         hideTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
@@ -165,6 +167,7 @@ final class AppState: ObservableObject {
             self.hud.hide()
             self.detailMarkdown = nil
             self.schedule = nil
+            self.cards = nil
         }
     }
 
@@ -247,6 +250,7 @@ final class AppState: ObservableObject {
         replyText = ""
         detailMarkdown = nil
         schedule = nil
+        cards = nil
         lastError = nil
         activityLog.clear()
         activities = []
@@ -302,6 +306,7 @@ final class AppState: ObservableObject {
         replyText = ""
         detailMarkdown = nil
         schedule = nil
+        cards = nil
         micLevels = []
         lastError = nil
         activityLog.clear()

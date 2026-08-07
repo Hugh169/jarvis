@@ -12,11 +12,16 @@ public enum Anthropic {
         public var system: [SystemBlock]?
         public var messages: [MessageParam]
         public var tools: [JSONValue]?
+        /// Forces a particular tool. The model cannot decline, which is the
+        /// only reliable way to get a structured result out of it — asking
+        /// nicely has been tried.
+        public var toolChoice: JSONValue?
         public var stream: Bool
 
         enum CodingKeys: String, CodingKey {
             case model
             case maxTokens = "max_tokens"
+            case toolChoice = "tool_choice"
             case system, messages, tools, stream
         }
 
@@ -26,6 +31,7 @@ public enum Anthropic {
             system: [SystemBlock]? = nil,
             messages: [MessageParam],
             tools: [JSONValue]? = nil,
+            toolChoice: JSONValue? = nil,
             stream: Bool = true
         ) {
             self.model = model
@@ -33,7 +39,13 @@ public enum Anthropic {
             self.system = system
             self.messages = messages
             self.tools = tools
+            self.toolChoice = toolChoice
             self.stream = stream
+        }
+
+        /// Requires the model to call this exact tool.
+        public static func forcing(_ toolName: String) -> JSONValue {
+            .object(["type": .string("tool"), "name": .string(toolName)])
         }
     }
 
