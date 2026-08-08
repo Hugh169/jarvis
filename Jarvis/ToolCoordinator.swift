@@ -3,6 +3,7 @@ import JarvisCore
 import JarvisTools
 import JarvisBrain
 import JarvisConnectors
+import JarvisMemory
 
 /// Owns the tool registry and executes calls on behalf of a turn: confirmation
 /// gating, concurrent execution, dry-run, and the audit trail.
@@ -71,6 +72,14 @@ final class ToolCoordinator {
         try? registry.register(SetVolumeTool())
         try? registry.register(OpenURLTool())
         try? registry.register(RunShortcutTool())
+
+        // Memory. Registered unconditionally for the same reason as the Google
+        // tools: the tool block is the front of the cached prompt prefix, so it
+        // has to be byte-identical between turns. If the database can't be
+        // opened they say so at execute time.
+        try? registry.register(RememberTool())
+        try? registry.register(RecallTool())
+        try? registry.register(ForgetTool())
 
         // Registered whether or not an account is connected: the tool block is
         // the front of the cached prompt prefix, so it has to be identical
@@ -259,6 +268,7 @@ final class ToolCoordinator {
         case "quit_app": "Quit"
         case "run_shortcut": "Run"
         case "send_message", "compose_mail": "Send"
+        case "forget": "Forget"
         default: "Confirm"
         }
     }
