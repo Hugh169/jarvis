@@ -106,6 +106,10 @@ final class AppState: ObservableObject {
     private var hideTask: Task<Void, Never>?
 
     private lazy var hud = HUDController(appState: self)
+    /// Confirmations are answered here, not in the HUD. Created eagerly at the
+    /// end of `init` — it works by observing `pendingConfirmation`, so a lazy
+    /// var nobody touches would simply never see the first request.
+    private lazy var confirmationWindow = ConfirmationWindowController(appState: self)
     private lazy var pipeline = VoicePipeline(appState: self)
     lazy var tools = ToolCoordinator(appState: self)
     private var stateTask: Task<Void, Never>?
@@ -135,6 +139,10 @@ final class AppState: ObservableObject {
                 self?.apply(state)
             }
         }
+        // Subscribes to `pendingConfirmation`; nothing else ever references it,
+        // so without this the window would never be built and a gated tool call
+        // would hang with no way to answer it.
+        _ = confirmationWindow
     }
 
     private func apply(_ state: TurnState) {
@@ -202,6 +210,7 @@ final class AppState: ObservableObject {
     /// Presents a confirmation in the HUD and resumes when the user decides.
     func requestConfirmation(_ request: ConfirmationRequest) async -> Bool {
         await withCheckedContinuation { continuation in
+            DebugLog.write("confirmation requested: \(request.toolName)")
             pendingConfirmation = request
             confirmationHandler = { approved in
                 continuation.resume(returning: approved)

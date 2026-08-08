@@ -235,23 +235,18 @@ final class ToolCoordinator {
 
     /// Shows the arguments, not just the tool name — approving "write_file"
     /// blind is not consent.
+    ///
+    /// The arguments go in `details` rather than being joined onto the summary
+    /// and clipped at 80 characters each. That clipping was survivable while
+    /// this rendered as one line in the HUD; it is not now that the window has
+    /// room, and it was actively dangerous for `send_mail`, where the body is
+    /// the part you most need to read.
     private static func confirmationRequest(for use: Anthropic.ToolUse) -> ConfirmationRequest {
         let descriptor = ToolPresentation.descriptor(for: use.name)
-        var summary = descriptor.title
-        if case .object(let fields) = use.input, !fields.isEmpty {
-            let detail = fields
-                .sorted { $0.key < $1.key }
-                .compactMap { key, value -> String? in
-                    guard let text = value.stringValue ?? value.numberValue.map({ String(Int($0)) })
-                    else { return nil }
-                    return "\(key): \(text.prefix(80))"
-                }
-                .joined(separator: ", ")
-            if !detail.isEmpty { summary += " — \(detail)" }
-        }
         return ConfirmationRequest(
             toolName: use.name,
-            summary: summary,
+            summary: descriptor.title,
+            details: ConfirmationDetails.rows(from: use.input),
             bundleIdentifier: descriptor.bundleIdentifier,
             symbolName: descriptor.symbolName,
             confirmVerb: Self.verb(for: use.name)

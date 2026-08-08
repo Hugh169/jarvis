@@ -140,47 +140,28 @@ private struct StatusDot: View {
     }
 }
 
-/// Destructive or outward-facing action blocked on a yes/no. Deliberately the
-/// only place in the HUD with real buttons.
-struct ConfirmationChipView: View {
+/// Reports that something is waiting on a decision. Carries no buttons on
+/// purpose: the answer is given in `ConfirmationWindowController`'s window, so
+/// the HUD never has to accept a click and can stay click-through even while a
+/// destructive action is pending. That is the whole point of the split — a
+/// panel sitting on top of Safari's toolbar is not a place to put consent.
+struct ConfirmationNoticeView: View {
     let request: ConfirmationRequest
-    let onDecision: (Bool) -> Void
-
-    /// Approve stays inert briefly after the chip appears, so a click already
-    /// travelling towards whatever was underneath can't authorise anything.
-    /// Cancel is live immediately — the safe answer never needs protecting.
-    @State private var armed = false
-    private static let armingDelay: Duration = .milliseconds(450)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 10) {
-                ToolIconView(bundleIdentifier: request.bundleIdentifier, symbolName: request.symbolName)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(request.summary)
-                        .font(.system(size: 13))
-                        .foregroundStyle(HUDTheme.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("\(request.toolName) · requires confirmation")
-                        .font(.system(size: 10.5, design: .monospaced))
-                        .foregroundStyle(HUDTheme.inkTertiary)
-                }
-                Spacer(minLength: 0)
+        HStack(spacing: 10) {
+            ToolIconView(bundleIdentifier: request.bundleIdentifier, symbolName: request.symbolName)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(request.summary)
+                    .font(.system(size: 13))
+                    .foregroundStyle(HUDTheme.ink)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(request.toolName) · answer in the window")
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(HUDTheme.inkTertiary)
             }
-
-            HStack(spacing: 7) {
-                // No `.defaultAction` on approve. It made approval the window's
-                // default button, so a stray Return authorised a destructive
-                // action — and the HUD is a non-activating panel the user never
-                // deliberately focuses. Approval must be a click.
-                Button(request.confirmVerb) { onDecision(true) }
-                    .buttonStyle(HUDButtonStyle(prominent: true))
-                    .disabled(!armed)
-                    .opacity(armed ? 1 : 0.5)
-                Button("Cancel") { onDecision(false) }
-                    .buttonStyle(HUDButtonStyle(prominent: false))
-                    .keyboardShortcut(.cancelAction)
-            }
+            Spacer(minLength: 0)
         }
         .padding(11)
         .background(HUDTheme.confirm.opacity(0.12), in: RoundedRectangle(cornerRadius: HUDTheme.chipRadius, style: .continuous))
@@ -188,32 +169,5 @@ struct ConfirmationChipView: View {
             RoundedRectangle(cornerRadius: HUDTheme.chipRadius, style: .continuous)
                 .strokeBorder(HUDTheme.confirm.opacity(0.40))
         )
-        .task {
-            armed = false
-            try? await Task.sleep(for: Self.armingDelay)
-            armed = true
-        }
-    }
-}
-
-private struct HUDButtonStyle: ButtonStyle {
-    let prominent: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .medium))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(prominent ? HUDTheme.accent.opacity(configuration.isPressed ? 0.78 : 1.0)
-                                    : Color.white.opacity(configuration.isPressed ? 0.16 : 0.07))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(prominent ? .clear : Color.white.opacity(0.14))
-            )
-            .foregroundStyle(prominent ? HUDTheme.onAccent : HUDTheme.ink)
-            .contentShape(Rectangle())
     }
 }
