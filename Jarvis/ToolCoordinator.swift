@@ -72,6 +72,7 @@ final class ToolCoordinator {
         try? registry.register(SetVolumeTool())
         try? registry.register(OpenURLTool())
         try? registry.register(RunShortcutTool())
+        try? registry.register(RunAppleScriptTool())
 
         // Memory. Registered unconditionally for the same reason as the Google
         // tools: the tool block is the front of the cached prompt prefix, so it
@@ -266,7 +267,7 @@ final class ToolCoordinator {
         switch toolName {
         case "write_file": "Write"
         case "quit_app": "Quit"
-        case "run_shortcut": "Run"
+        case "run_shortcut", "run_applescript": "Run"
         case "send_message", "compose_mail": "Send"
         case "forget": "Forget"
         default: "Confirm"

@@ -185,8 +185,12 @@ public enum ToolPresentation {
         "read_file": .init(title: "Reading a file", bundleIdentifier: "com.apple.finder", symbolName: "doc.text"),
         "write_file": .init(title: "Writing a file", bundleIdentifier: "com.apple.finder", symbolName: "square.and.pencil"),
         "run_shortcut": .init(title: "Running a shortcut", bundleIdentifier: "com.apple.shortcuts", symbolName: "bolt"),
+        // Deliberately not an app icon. The placeholder here used to show Script
+        // Editor's, but osascript doesn't drive Script Editor — the script can
+        // touch any scriptable app on the machine, and an app icon reads as a
+        // blast radius of one.
+        "run_applescript": .init(title: "Running a script", bundleIdentifier: nil, symbolName: "curlybraces.square"),
         "run_shell": .init(title: "Running a command", bundleIdentifier: "com.apple.Terminal", symbolName: "terminal"),
-        "run_applescript": .init(title: "Automating an app", bundleIdentifier: "com.apple.ScriptEditor2", symbolName: "scroll"),
         "open_url": .init(title: "Opening a link", bundleIdentifier: "com.apple.Safari", symbolName: "safari"),
         "web_search": .init(title: "Searching the web", bundleIdentifier: nil, symbolName: "globe"),
         "remember": .init(title: "Committing that to memory", bundleIdentifier: nil, symbolName: "brain"),

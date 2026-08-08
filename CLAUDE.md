@@ -238,7 +238,24 @@ Entitlements are generated **from `project.yml`** — `xcodegen` overwrites
    one — see the note under "Memory is a write surface for anything the model
    reads".
 
-6–9. ⬜ AppleScript/shell, MCP, computer use, polish.
+6. 🟡 Escape hatches. `run_applescript` runs arbitrary AppleScript, gated
+   behind confirmation, with a 30s timeout and an 8,000-character output cap.
+   Verified in a real turn: the model wrote a script, the gate opened, and the
+   script rendered in full for approval before anything ran.
+
+   **The confirmation is the only real control, and it is the user's judgement
+   doing the work.** The timeout and the cap are enforced by code; "prefer a
+   specific tool" is an instruction in the description, which is the same
+   category of thing as "don't narrate before tool calls" — routinely ignored.
+   A script assembled from text the model read in an email would look exactly
+   like one the user asked for. `run_shell` is not built, and shouldn't be
+   until that has an answer.
+
+   The script goes to `osascript` on **stdin**, not as `-e` arguments: a
+   multi-line script needs one `-e` per line, and a long one can exceed the
+   argument length limit.
+
+7–9. ⬜ MCP, computer use, polish.
 
 ## Open, in the order I'd take them
 
@@ -281,6 +298,21 @@ makes memory feel like an assistant rather than a notebook, and it is also the
 one that turns every ingested email into a write to long-term memory. If it
 lands, the safest version extracts only from what the user actually said aloud —
 never from tool output.
+
+## `ToolPresentation.table` traps on a duplicate key
+
+It is a dictionary literal, so two entries for the same tool name is a
+*runtime* crash — `Dictionary literal contains duplicate keys` — not a compile
+error, and it fires the first time anything reads the table. Adding
+`run_applescript` hit exactly this, because a placeholder entry for it was
+already there. The JarvisCore tests are what catch it; it cannot be asserted in
+a test of its own, because the trap happens before anything can inspect the
+table.
+
+That placeholder pointed at Script Editor's icon, which is now deliberately
+`nil`. `osascript` doesn't drive Script Editor — the script can touch any
+scriptable app on the machine, and an app icon on the chip reads as a blast
+radius of one.
 
 ## Google connectors belong to the app, not to macOS
 
