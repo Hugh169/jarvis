@@ -205,8 +205,10 @@ struct HUDView: View {
                 }
 
                 if let request = appState.pendingConfirmation {
-                    ConfirmationNoticeView(request: request)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                    ConfirmationCardView(request: request) { approved in
+                        appState.resolveConfirmation(approved: approved)
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
         }

@@ -140,28 +140,84 @@ private struct StatusDot: View {
     }
 }
 
-/// Reports that something is waiting on a decision. Carries no buttons on
-/// purpose: the answer is given in `ConfirmationWindowController`'s window, so
-/// the HUD never has to accept a click and can stay click-through even while a
-/// destructive action is pending. That is the whole point of the split — a
-/// panel sitting on top of Safari's toolbar is not a place to put consent.
-struct ConfirmationNoticeView: View {
+/// The decision, in the HUD. Everything happens in one panel — there is no
+/// second window.
+///
+/// This is the only place in the HUD with real buttons, and the panel has to
+/// accept clicks while it is up. That reopens a problem seen for real: the HUD
+/// floats where app toolbars and address bars live, and clicks aimed at Safari
+/// once landed on the approve button and authorised writes nobody meant. Three
+/// things push back, and it is worth knowing which is which:
+///
+/// - **Approve waits 450ms after appearing.** Stops a click already in flight.
+/// - **Approve also requires the pointer to rest here for 400ms.** A click on
+///   its way to the window underneath arrives moments after the pointer does;
+///   a person actually answering has read the thing first. This is the control
+///   that does the most work, because it does not expire.
+/// - **The buttons sit at the bottom of the panel**, furthest from the toolbar
+///   strip the HUD overlaps.
+///
+/// Cancel has none of these. The safe answer never needs protecting, and
+/// Escape — already a global hotkey while the HUD is up — declines too.
+struct ConfirmationCardView: View {
     let request: ConfirmationRequest
+    let onDecision: (Bool) -> Void
+
+    @State private var settled = false
+    @State private var hovering = false
+    @State private var dwelled = false
+
+    private static let settleDelay: Duration = .milliseconds(450)
+    private static let dwellDelay: Duration = .milliseconds(400)
+
+    private var armed: Bool { settled && dwelled }
 
     var body: some View {
-        HStack(spacing: 10) {
-            ToolIconView(bundleIdentifier: request.bundleIdentifier, symbolName: request.symbolName)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(request.summary)
-                    .font(.system(size: 13))
-                    .foregroundStyle(HUDTheme.ink)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("\(request.toolName) · answer in the window")
-                    .font(.system(size: 10.5, design: .monospaced))
-                    .foregroundStyle(HUDTheme.inkTertiary)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                ToolIconView(bundleIdentifier: request.bundleIdentifier, symbolName: request.symbolName)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(request.summary)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(HUDTheme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("\(request.toolName) · requires confirmation")
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundStyle(HUDTheme.confirm)
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+
+            if !request.details.isEmpty {
+                // `ViewThatFits` rather than a bare ScrollView: a ScrollView is
+                // greedy and takes the whole cap whatever it holds, which put a
+                // one-line script in a box of mostly empty space. Natural height
+                // when the rows fit, scrolling only when they don't — and the
+                // wheel does arrive here, because the panel accepts mouse
+                // events while a decision is pending.
+                ViewThatFits(in: .vertical) {
+                    detailRows
+                    ScrollView { detailRows }
+                }
+                .frame(maxHeight: 190)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.black.opacity(0.22))
+                )
+            }
+
+            HStack(spacing: 7) {
+                Button("Cancel") { onDecision(false) }
+                    .buttonStyle(HUDButtonStyle(prominent: false))
+                // No `.defaultAction`. It made approval the panel's default
+                // button, so a stray Return authorised a destructive action —
+                // and this is a non-activating panel the user never deliberately
+                // focuses. Approval must be a deliberate click.
+                Button(request.confirmVerb) { onDecision(true) }
+                    .buttonStyle(HUDButtonStyle(prominent: true))
+                    .disabled(!armed)
+                    .opacity(armed ? 1 : 0.45)
+            }
         }
         .padding(11)
         .background(HUDTheme.confirm.opacity(0.12), in: RoundedRectangle(cornerRadius: HUDTheme.chipRadius, style: .continuous))
@@ -169,5 +225,65 @@ struct ConfirmationNoticeView: View {
             RoundedRectangle(cornerRadius: HUDTheme.chipRadius, style: .continuous)
                 .strokeBorder(HUDTheme.confirm.opacity(0.40))
         )
+        .onHover { inside in
+            hovering = inside
+            // Leaving resets the dwell: the pointer has to settle again, so a
+            // sweep across the panel on the way somewhere else never arms it.
+            if !inside { dwelled = false }
+        }
+        .task(id: hovering) {
+            guard hovering else { return }
+            try? await Task.sleep(for: Self.dwellDelay)
+            if !Task.isCancelled { dwelled = true }
+        }
+        .task {
+            settled = false
+            try? await Task.sleep(for: Self.settleDelay)
+            settled = true
+        }
+    }
+
+    /// Shared by both branches of `ViewThatFits` so the fitting test and the
+    /// scrolling fallback can't drift apart.
+    private var detailRows: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(request.details, id: \.label) { detail in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(detail.label)
+                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(HUDTheme.inkTertiary)
+                        .textCase(.uppercase)
+                    Text(detail.value)
+                        .font(.system(size: 12))
+                        .foregroundStyle(HUDTheme.ink)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(9)
+    }
+}
+
+private struct HUDButtonStyle: ButtonStyle {
+    let prominent: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .medium))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(prominent ? HUDTheme.accent.opacity(configuration.isPressed ? 0.78 : 1.0)
+                                    : Color.white.opacity(configuration.isPressed ? 0.16 : 0.07))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(prominent ? .clear : Color.white.opacity(0.14))
+            )
+            .foregroundStyle(prominent ? HUDTheme.onAccent : HUDTheme.ink)
+            .contentShape(Rectangle())
     }
 }
