@@ -7,7 +7,8 @@ the build plan; work proceeds in phases (currently: **Phase 4 — tools**).
 ## Layout
 
 - `Jarvis/` — app-target sources (SwiftUI menu bar, HUD `NSPanel`, hotkeys, settings).
-- `Packages/` — seven local SPM packages (Core, Audio, Speech, Voice, Brain, Tools, Memory).
+- `Packages/` — eight local SPM packages (Core, Audio, Speech, Voice, Brain,
+  Tools, Memory, Connectors).
   Rule: every package builds and tests independently of the app target.
 - `Package.swift` (root) — convenience manifest building the app as a plain
   executable (`JarvisDev`) for a fast no-bundle loop. Not the shipping app.
@@ -188,8 +189,10 @@ Entitlements are generated **from `project.yml`** — `xcodegen` overwrites
    impossible for a self-signed local build. Swapping back replaces one
    `execute`.
 
-   **Unverified**: a deliberate approve/decline click on the gate. It provably
-   holds and waits, but see "The HUD steals clicks" below.
+   **Unverified**: a deliberate approve/decline click. The gate provably holds
+   and waits, and the window it now waits in is verified on screen — but the
+   Keychain prompt lands on top of it on every rebuild, so the click itself
+   still needs a human. See "Confirmations are a window" below.
    **Layer 1 — live search and location** (added after Phase 4; Phase 5 memory
    and the MCP client are deferred).
 
@@ -215,10 +218,6 @@ Entitlements are generated **from `project.yml`** — `xcodegen` overwrites
 
 ## Open, in the order I'd take them
 
-- **The confirmation gate still sits on the click-through strip.** It now
-  guards `send_mail`, and email is far more attacker-controlled than web
-  search — anyone can send you some. See "The HUD steals clicks"; the fix is
-  moving confirmations off top-centre or promoting them to a focused window.
 - **The Keychain prompt reappears on most rebuilds**, asking for the login
   password rather than a plain Allow, which means the ACL isn't binding to the
   signing identity. It is not cosmetic: it has blocked turns, hidden UI during
@@ -415,20 +414,39 @@ it, and that makes it scroll-through as well — the wheel never arrives. Making
 it scrollable means accepting mouse events, which is the exact behaviour the
 click-through rule exists to prevent. Content renders at full height instead.
 
-## The HUD steals clicks
+## Confirmations are a window, not part of the HUD
 
 The HUD floats at top-centre, which is exactly where app toolbars, tab bars and
-address bars live. It is `ignoresMouseEvents` while merely showing status, so
-clicks pass through to whatever is underneath — but it *must* accept clicks
-while a confirmation is up, and a click aimed at the window below then lands on
-the confirmation instead.
+address bars live. That was survivable while it only showed status — it is
+`ignoresMouseEvents`, so clicks pass through — but a confirmation *must* accept
+clicks, and a click aimed at the window below then landed on the approve button.
 
 This was observed for real: repeated writes were approved during testing purely
-because clicks in Safari were landing on the HUD's approve button. Mitigations
-so far: click-through unless a decision is pending, and approve stays inert for
-450ms so an in-flight click can't authorise anything (Cancel is live at once —
-the safe answer never needs protecting).
+because clicks in Safari were hitting the HUD. Click-through-unless-pending and
+a 450ms inert approve reduced it without fixing it, because the panel was in the
+wrong place and the user had never chosen to interact with it.
 
-Residual risk remains: a deliberate click 2s later still hits it. If this bites,
-the options are moving confirmations off the top-centre strip, or promoting them
-to a real focused window.
+Confirmations now open their own window (`ConfirmationWindowController`),
+centred, focused, above the HUD's level. The HUD keeps a passive notice saying
+where to answer and carries no buttons at all — so it is now click-through
+except when you are typing into it, and the whole class of stolen-click
+approvals is gone. Two mitigations are kept because the window still appears
+unbidden and takes focus: approve is inert for 450ms, and approve is **⌘Return,
+never plain Return** — a Return already on its way to your own app must not
+authorise anything, which is the click bug one device over. Escape cancels.
+The close button is hidden: nothing dismisses this except an answer, since
+anything else leaves the tool call suspended.
+
+It also shows the arguments as rows rather than one 80-character-clipped line.
+For `send_mail` the body is the part you most need to read before saying yes,
+and unlike the HUD's detail pane this window accepts mouse events, so it can
+scroll.
+
+Two AppKit traps, both of which put a window on screen that isn't there:
+
+- **`fittingSize` straight after setting `contentView` is zero** — layout hasn't
+  run. The window was created, focused and 0×0. Use `contentViewController`
+  with an `NSHostingController` and `layoutSubtreeIfNeeded()` before reading it.
+- **Centring before layout divides by a width you don't have yet**, which put
+  the window's left edge exactly on the middle of the screen. Size first, then
+  centre.

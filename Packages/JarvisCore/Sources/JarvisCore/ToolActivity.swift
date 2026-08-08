@@ -98,12 +98,36 @@ public struct ToolActivityLog: Sendable, Equatable {
     }
 }
 
-/// A destructive or outward-facing action waiting on a yes/no in the HUD.
+/// A destructive or outward-facing action waiting on a yes/no.
+///
+/// Answered in its own focused window, not in the HUD — see
+/// `ConfirmationWindowController`. The HUD only reports that something is
+/// waiting.
 public struct ConfirmationRequest: Identifiable, Sendable, Equatable {
+    /// One argument of the action, as the user needs to read it. Kept as rows
+    /// rather than a joined string so the window can lay them out and let a
+    /// long one (a mail body) wrap on its own.
+    /// Not `Identifiable` on purpose: a synthesised `id` would make two rows
+    /// with the same contents compare unequal, and `ConfirmationRequest`
+    /// equality is what tells the window whether it is looking at a new
+    /// request. Labels are unique within a request, so views key on those.
+    public struct Detail: Sendable, Equatable {
+        public let label: String
+        public let value: String
+
+        public init(label: String, value: String) {
+            self.label = label
+            self.value = value
+        }
+    }
+
     public let id: UUID
     public let toolName: String
     /// What will happen, in plain words ("Send to Dad — \"Running late\"").
     public let summary: String
+    /// The arguments, spelled out. Approving `send_mail` without seeing the
+    /// recipient and the body is not consent.
+    public let details: [Detail]
     public let bundleIdentifier: String?
     public let symbolName: String
     /// Verb for the approve button ("Send", "Delete", "Run").
@@ -113,6 +137,7 @@ public struct ConfirmationRequest: Identifiable, Sendable, Equatable {
         id: UUID = UUID(),
         toolName: String,
         summary: String,
+        details: [Detail] = [],
         bundleIdentifier: String? = nil,
         symbolName: String = "exclamationmark.shield",
         confirmVerb: String = "Confirm"
@@ -120,6 +145,7 @@ public struct ConfirmationRequest: Identifiable, Sendable, Equatable {
         self.id = id
         self.toolName = toolName
         self.summary = summary
+        self.details = details
         self.bundleIdentifier = bundleIdentifier
         self.symbolName = symbolName
         self.confirmVerb = confirmVerb
