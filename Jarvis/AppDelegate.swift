@@ -18,6 +18,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appState.selectDefaultVoiceIfNeeded()
 
         let arguments = CommandLine.arguments
+        if arguments.contains("--computer-check") {
+            // Phase 8 groundwork. Computer use needs two TCC grants, and the
+            // location tools proved that an ungranted macOS permission is
+            // indistinguishable from code that silently does nothing — so this
+            // reports the state and writes a real capture to disk before any of
+            // it is wired to a tool.
+            Task { @MainActor in
+                await ComputerCheck.run()
+                NSApp.terminate(nil)
+            }
+        }
+
         if arguments.contains("--settings") {
             // Straight to Settings — the app has no Dock icon or window, so
             // there is otherwise no way in except the menu bar. Deferred: the

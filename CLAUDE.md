@@ -255,7 +255,72 @@ Entitlements are generated **from `project.yml`** — `xcodegen` overwrites
    multi-line script needs one `-e` per line, and a long one can exceed the
    argument length limit.
 
-7–9. ⬜ MCP, computer use, polish.
+7. ⬜ MCP. Skipped ahead of phase 8 deliberately — MCP adds third-party tools,
+   computer use adds screen control, and neither depends on the other.
+
+8. 🟡 Computer use — primitives, not yet a tool. `ScreenCapture` produces a PNG
+   scaled to the display's size in points plus the size to declare;
+   `CoordinateSpace` maps a click back; `InputSynthesis` posts mouse and
+   keyboard events; `ComputerAccess` reports the two TCC grants. **Both grants
+   are already in place on this machine.** `--computer-check` verified a real
+   1440×900 capture, and a pointer move that landed exactly where it was asked
+   to and was then restored.
+
+   Nothing is wired to the model yet: no tool definition, no turn integration.
+   The spec to build against is
+   `type: "computer_20251124"`, `name: "computer"`, beta header
+   `computer-use-2025-11-24`, with `display_width_px`/`display_height_px`/
+   `display_number` on the definition. `claude-opus-5` supports it, which is
+   what `ModelTier` already routes computer-use turns to. `enable_zoom: true`
+   adds a `zoom` action for reading small text.
+
+9. ⬜ Polish.
+
+## One coordinate space, or every click is wrong
+
+A Retina Mac captures at a device pixel ratio of 2: a 1440×900 desktop yields a
+2880×1800 image. The docs offer two fixes — downscale the image, or halve the
+coordinates the model returns — and taking both, or neither, puts every click
+out by a factor of two.
+
+The rule here is **capture → scale to the display's size in points → declare
+that exact size → read every click in that same space**. No arithmetic at click
+time. The declared size, the image, and the click space are one thing, and if
+they ever disagree the error is silent: clicks land somewhere plausible but
+wrong, which reads as the model being bad at clicking.
+
+The cap is 1920×1080 (above it accuracy drops and latency rises), applied to
+the size in **points**. This machine is 1440×900 in points, so it never clamps.
+If `targetSize` ever returns 1920×1200 for this display, something fed it
+pixels.
+
+Mapping back is `CoordinateSpace`, and on any display under the cap it is the
+**identity** — nothing to get wrong. It only scales when the capture was
+clamped, and that is the one place in computer use where arithmetic on a
+coordinate is allowed. An out-of-range point clamps to the screen edge rather
+than being posted: an out-of-bounds `CGEvent` is silently dropped, which looks
+exactly like the click not working.
+
+`CGEvent` and the capture are both **top-left origin**, so there is no Y flip
+between them. `NSScreen.mouseLocation` is bottom-left, which is why it is only
+used with an explicit conversion.
+
+**Nothing in `InputSynthesis` is exercised by the test suite.** Every function
+in it moves the real pointer or types on the real keyboard, so a test would
+take over the machine of whoever ran the suite — CI and unattended loops
+included. The parts that can be wrong in an interesting way (the coordinate
+mapping, the keymap) are pure, and those are what the tests cover. The posting
+path is verified by `--computer-check`, which moves the pointer and puts it
+back — a move activates nothing, unlike a synthetic click, which lands on
+whatever happens to be underneath.
+
+**`CGDisplayCreateImage` is unavailable on macOS 26** — removed, not
+deprecated, so the compiler stops you rather than letting it rot. ScreenCaptureKit
+replaces it and suits this better: `SCStreamConfiguration` takes the output
+size, so the downscale happens inside the capture pipeline. Its content filter
+also excludes JARVIS's own windows — without that the HUD, which floats above
+everything, appears in the screenshot and the model reasons about its own
+reflection.
 
 ## Open, in the order I'd take them
 
