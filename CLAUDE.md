@@ -432,39 +432,45 @@ it, and that makes it scroll-through as well — the wheel never arrives. Making
 it scrollable means accepting mouse events, which is the exact behaviour the
 click-through rule exists to prevent. Content renders at full height instead.
 
-## Confirmations are a window, not part of the HUD
+## Confirmations live in the HUD, and what that costs
 
-The HUD floats at top-centre, which is exactly where app toolbars, tab bars and
-address bars live. That was survivable while it only showed status — it is
-`ignoresMouseEvents`, so clicks pass through — but a confirmation *must* accept
-clicks, and a click aimed at the window below then landed on the approve button.
+Everything happens in one panel. There is no second window — that is a product
+decision, and it is the right one for what this thing is: the HUD *is* the
+interface, and a modal window appearing beside it broke that.
 
-This was observed for real: repeated writes were approved during testing purely
-because clicks in Safari were hitting the HUD. Click-through-unless-pending and
-a 450ms inert approve reduced it without fixing it, because the panel was in the
-wrong place and the user had never chosen to interact with it.
+It does have a real cost, and the cost is not theoretical. The HUD floats at
+top-centre, exactly where app toolbars, tab bars and address bars live. It is
+`ignoresMouseEvents` while merely showing status, so clicks pass through — but
+a confirmation must accept clicks, and a click aimed at the window below can
+land on the approve button. **This was observed for real**: repeated writes were
+approved during testing purely because clicks in Safari were hitting the HUD.
 
-Confirmations now open their own window (`ConfirmationWindowController`),
-centred, focused, above the HUD's level. The HUD keeps a passive notice saying
-where to answer and carries no buttons at all — so it is now click-through
-except when you are typing into it, and the whole class of stolen-click
-approvals is gone. Two mitigations are kept because the window still appears
-unbidden and takes focus: approve is inert for 450ms, and approve is **⌘Return,
-never plain Return** — a Return already on its way to your own app must not
-authorise anything, which is the click bug one device over. Escape cancels.
-The close button is hidden: nothing dismisses this except an answer, since
-anything else leaves the tool call suspended.
+There was a period where confirmations opened their own focused window instead,
+which did close that hole completely. It was removed on purpose, in favour of
+one surface. So the mitigations are all that stand between a stray click and an
+approval, and it is worth knowing which do real work:
 
-It also shows the arguments as rows rather than one 80-character-clipped line.
-For `send_mail` the body is the part you most need to read before saying yes,
-and unlike the HUD's detail pane this window accepts mouse events, so it can
-scroll.
+- **Approve waits 450ms after the card appears.** Catches a click already in
+  flight. Expires, so it does nothing about a click two seconds later.
+- **Approve also requires the pointer to rest on the card for 400ms**, and
+  leaving resets it. This is the one that carries the weight: a click on its way
+  to the window underneath arrives moments after the pointer does, whereas
+  someone actually answering has read the thing first. It does not expire.
+- **The buttons sit at the bottom of the panel**, furthest from the toolbar
+  strip the HUD overlaps.
+- **No `.defaultAction` on approve.** It made approval the panel's default
+  button, so a stray Return authorised a destructive action — and this is a
+  non-activating panel nobody deliberately focuses.
 
-Two AppKit traps, both of which put a window on screen that isn't there:
+Cancel has none of this. The safe answer never needs protecting, and Escape —
+already a global hotkey while the HUD is up — declines as well.
 
-- **`fittingSize` straight after setting `contentView` is zero** — layout hasn't
-  run. The window was created, focused and 0×0. Use `contentViewController`
-  with an `NSHostingController` and `layoutSubtreeIfNeeded()` before reading it.
-- **Centring before layout divides by a width you don't have yet**, which put
-  the window's left edge exactly on the middle of the screen. Size first, then
-  centre.
+Residual risk, stated plainly: a deliberate click on the approve button, more
+than 400ms after the pointer settles there, is indistinguishable from consent.
+If that bites again, the fix that actually worked was the separate window.
+
+The card shows arguments as rows rather than one 80-character-clipped line —
+for `send_mail` the body is the part you most need to read, and for
+`run_applescript` it is the whole script. `ViewThatFits` rather than a bare
+`ScrollView`: a ScrollView is greedy and takes its whole height cap whatever it
+holds, which put a one-line script in a box of mostly empty space.

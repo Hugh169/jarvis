@@ -126,7 +126,13 @@ enum HUDDemo {
         let approved = await appState.requestConfirmation(
             ConfirmationRequest(
                 toolName: "send_message",
-                summary: "Send to Dad — \u{201C}Running late, sorry!\u{201D}",
+                summary: "Send a message",
+                // Real rows, so the demo exercises the layout an actual gated
+                // call produces rather than a bare one-liner.
+                details: [
+                    .init(label: "To", value: "Dad"),
+                    .init(label: "Message", value: "Running late, sorry! Should be there by half seven."),
+                ],
                 bundleIdentifier: "com.apple.MobileSMS",
                 symbolName: "message",
                 confirmVerb: "Send"

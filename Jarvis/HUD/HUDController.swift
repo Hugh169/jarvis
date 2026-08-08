@@ -11,6 +11,7 @@ final class HUDController {
     private var panel: HUDPanel?
     private var heightObserver: AnyCancellable?
 
+    private var mouseObserver: AnyCancellable?
     private var composeObserver: AnyCancellable?
     /// Displays can be added, removed or resized while the HUD is hidden.
     private var screenObserver: NSObjectProtocol?
@@ -25,22 +26,31 @@ final class HUDController {
             }
 
         // The panel floats over everything at top-centre, which is exactly
-        // where app toolbars and address bars live. If it accepts clicks, a
-        // click meant for the window underneath hits the HUD instead.
+        // where app toolbars and address bars live. It is click-through while
+        // merely showing status, so clicks reach whatever is underneath — but
+        // it must accept them while a confirmation is up or while typing.
         //
-        // Typing is now the only thing that makes it accept them: confirmations
-        // used to live here too, and a click aimed at Safari could land on the
-        // approve button — which is why they moved to their own window. The
-        // HUD reports that a decision is pending and nothing more.
+        // Everything happens in this one panel, confirmations included, so a
+        // click aimed at the window below can still land on the approve button.
+        // `ConfirmationCardView` carries the mitigations; see its comment for
+        // which are real.
         composeObserver = appState.$isComposing
             .removeDuplicates()
             .sink { [weak self] composing in
                 guard let self, let panel = self.panel else { return }
                 panel.acceptsTyping = composing
-                panel.ignoresMouseEvents = !composing
+                panel.ignoresMouseEvents = !composing && self.appState.pendingConfirmation == nil
                 if composing, panel.isVisible {
                     self.makeKeyIfComposing(panel)
                 }
+            }
+
+        mouseObserver = appState.$pendingConfirmation
+            .map { $0 == nil }
+            .removeDuplicates()
+            .sink { [weak self] clickThrough in
+                guard let self else { return }
+                self.panel?.ignoresMouseEvents = clickThrough && !self.appState.isComposing
             }
 
         screenObserver = NotificationCenter.default.addObserver(
@@ -97,8 +107,8 @@ final class HUDController {
         host.autoresizingMask = [.width, .height]
         panel.contentView = host
         panel.alphaValue = 0
-        // Click-through unless the user is typing into it.
-        panel.ignoresMouseEvents = !appState.isComposing
+        // Click-through until something needs an answer.
+        panel.ignoresMouseEvents = appState.pendingConfirmation == nil && !appState.isComposing
         panel.acceptsTyping = appState.isComposing
         self.panel = panel
         return panel
