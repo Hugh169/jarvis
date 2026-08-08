@@ -71,6 +71,7 @@ final class ToolCoordinator {
         try? registry.register(SetVolumeTool())
         try? registry.register(OpenURLTool())
         try? registry.register(RunShortcutTool())
+        try? registry.register(RunAppleScriptTool())
 
         // Registered whether or not an account is connected: the tool block is
         // the front of the cached prompt prefix, so it has to be identical
@@ -257,7 +258,7 @@ final class ToolCoordinator {
         switch toolName {
         case "write_file": "Write"
         case "quit_app": "Quit"
-        case "run_shortcut": "Run"
+        case "run_shortcut", "run_applescript": "Run"
         case "send_message", "compose_mail": "Send"
         default: "Confirm"
         }
