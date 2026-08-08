@@ -143,6 +143,10 @@ Entitlements are generated **from `project.yml`** — `xcodegen` overwrites
 
 - Panic hotkey defaults to ⌥Esc, not ⌘⌥Esc — the latter is the system Force
   Quit shortcut and can't be cleanly claimed. Rebindable in Settings.
+- Memory is FTS5 on the system SQLite, not GRDB + FTS5. Every local package is
+  dependency-free, which is what lets `scripts/test.sh` fall back to the CLT
+  toolchain, and macOS's SQLite already carries FTS5 — a package for the
+  wrapper would cost that property to save some C interop.
 
 ## Phase status
 
@@ -214,7 +218,21 @@ Entitlements are generated **from `project.yml`** — `xcodegen` overwrites
    for everything else — facts, figures, tables, maps, photos. Drawn without
    asking the model to choose; see "The model will not call a display tool".
 
-5–9. ⬜ Memory, AppleScript/shell, MCP, computer use, polish.
+5. 🟡 Memory. `SQLiteMemoryStore` gives `MemoryStore` a durable implementation —
+   FTS5 over `~/.jarvis/memory.sqlite`, ranked by `bm25`. Verified by test
+   against a real file: written, store closed, reopened as a new instance, read
+   back. Free text is rewritten into an FTS5 match expression before it goes
+   near the query parser, because a spoken sentence carrying an apostrophe or a
+   bare `AND` is a *syntax error* to FTS5 rather than a search — that rewrite
+   is the part with the tests.
+
+   **Nothing uses it yet.** `JarvisMemory` is still absent from `project.yml`,
+   so the shipping app doesn't link it, there are no remember/recall/forget
+   tools, and JARVIS still forgets everything between launches. Next: wire the
+   package in, then decide what is worth remembering — that second one is a
+   product decision, not a mechanical one.
+
+6–9. ⬜ AppleScript/shell, MCP, computer use, polish.
 
 ## Open, in the order I'd take them
 
