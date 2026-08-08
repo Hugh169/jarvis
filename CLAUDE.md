@@ -258,13 +258,16 @@ Entitlements are generated **from `project.yml`** — `xcodegen` overwrites
 7. ⬜ MCP. Skipped ahead of phase 8 deliberately — MCP adds third-party tools,
    computer use adds screen control, and neither depends on the other.
 
-8. 🟡 Computer use — capture layer only. `ScreenCapture` produces a PNG scaled
-   to the display's size in points, plus the size to declare. `ComputerAccess`
-   reports the two TCC grants. **Both are already granted on this machine**,
-   and `--computer-check` verified a real 1440×900 capture end to end.
+8. 🟡 Computer use — primitives, not yet a tool. `ScreenCapture` produces a PNG
+   scaled to the display's size in points plus the size to declare;
+   `CoordinateSpace` maps a click back; `InputSynthesis` posts mouse and
+   keyboard events; `ComputerAccess` reports the two TCC grants. **Both grants
+   are already in place on this machine.** `--computer-check` verified a real
+   1440×900 capture, and a pointer move that landed exactly where it was asked
+   to and was then restored.
 
-   Nothing is wired to the model yet: no tool definition, no input synthesis,
-   no turn integration. The spec to build against is
+   Nothing is wired to the model yet: no tool definition, no turn integration.
+   The spec to build against is
    `type: "computer_20251124"`, `name: "computer"`, beta header
    `computer-use-2025-11-24`, with `display_width_px`/`display_height_px`/
    `display_number` on the definition. `claude-opus-5` supports it, which is
@@ -290,6 +293,26 @@ The cap is 1920×1080 (above it accuracy drops and latency rises), applied to
 the size in **points**. This machine is 1440×900 in points, so it never clamps.
 If `targetSize` ever returns 1920×1200 for this display, something fed it
 pixels.
+
+Mapping back is `CoordinateSpace`, and on any display under the cap it is the
+**identity** — nothing to get wrong. It only scales when the capture was
+clamped, and that is the one place in computer use where arithmetic on a
+coordinate is allowed. An out-of-range point clamps to the screen edge rather
+than being posted: an out-of-bounds `CGEvent` is silently dropped, which looks
+exactly like the click not working.
+
+`CGEvent` and the capture are both **top-left origin**, so there is no Y flip
+between them. `NSScreen.mouseLocation` is bottom-left, which is why it is only
+used with an explicit conversion.
+
+**Nothing in `InputSynthesis` is exercised by the test suite.** Every function
+in it moves the real pointer or types on the real keyboard, so a test would
+take over the machine of whoever ran the suite — CI and unattended loops
+included. The parts that can be wrong in an interesting way (the coordinate
+mapping, the keymap) are pure, and those are what the tests cover. The posting
+path is verified by `--computer-check`, which moves the pointer and puts it
+back — a move activates nothing, unlike a synthetic click, which lands on
+whatever happens to be underneath.
 
 **`CGDisplayCreateImage` is unavailable on macOS 26** — removed, not
 deprecated, so the compiler stops you rather than letting it rot. ScreenCaptureKit
