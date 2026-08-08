@@ -198,15 +198,40 @@ Entitlements are generated **from `project.yml`** — `xcodegen` overwrites
    response. Verified on the wire — a "news today" turn ran the search and
    answered from it in 399 characters.
 
-   🔴 **Location and directions.** `where_am_i`, `travel_time_to`,
-   `directions_to`, `nearby` — CoreLocation and MapKit, no key or OAuth. They
-   compile, register and are covered by tests, but **do not work on this
-   build**: see below.
+   ✅ **Location and directions.** `where_am_i`, `travel_time_to`,
+   `directions_to`, `nearby` — CoreLocation and MapKit, no key or OAuth.
+   Verified in a real turn: a fix in 460ms and five travel lookups, all
+   succeeding. It was blocked for a while and the diagnosis is kept below,
+   because the two dead ends are easy to walk back into.
 
    ✅ **Google connectors.** OAuth inside the app — calendar and Gmail tools,
    verified end to end against a real account.
 
+   ✅ **Visual answers.** A timeline for anything with times, and `display_cards`
+   for everything else — facts, figures, tables, maps, photos. Drawn without
+   asking the model to choose; see "The model will not call a display tool".
+
 5–9. ⬜ Memory, AppleScript/shell, MCP, computer use, polish.
+
+## Open, in the order I'd take them
+
+- **The confirmation gate still sits on the click-through strip.** It now
+  guards `send_mail`, and email is far more attacker-controlled than web
+  search — anyone can send you some. See "The HUD steals clicks"; the fix is
+  moving confirmations off top-centre or promoting them to a focused window.
+- **The Keychain prompt reappears on most rebuilds**, asking for the login
+  password rather than a plain Allow, which means the ACL isn't binding to the
+  signing identity. It is not cosmetic: it has blocked turns, hidden UI during
+  verification, and distorted latency measurements badly enough to make a
+  change look like a 2× regression when it wasn't.
+- **The model narrates before tool calls** — "I'll check your calendar…" — and
+  it is spoken aloud. The prompt forbids it and Haiku does it anyway. The HUD
+  no longer displays it. Suppressing it properly means not speaking text from
+  rounds that end in a tool call, which costs the streaming the 1.2s budget
+  depends on; Sonnet holds the instruction better.
+- **Phase 5 (memory)** is the largest thing not started, and the one that
+  changes what the product is: it currently forgets everything between
+  launches.
 
 ## Google connectors belong to the app, not to macOS
 
@@ -275,10 +300,26 @@ A searching turn costs seconds: measured 4.2s to first audio against a 1.2s
 budget. That is inherent — there is a full round trip before the first token —
 and the budget only applies to turns that don't search.
 
-## Location never gets asked for
+## Location: two dead ends worth not repeating
 
-`where_am_i` and the travel tools are written and tested but return an error on
-this build. The chain of evidence, so nobody repeats it:
+The travel tools work now. They didn't for a while, and both wrong turns look
+completely reasonable from the code:
+
+- **`CLLocationUpdate.liveUpdates()` never requests authorisation on macOS.**
+  It is the tidier API and it simply produces nothing, forever, with no error
+  and nothing in the log. It needs an explicit `CLLocationManager`.
+- **`requestWhenInUseAuthorization()` is an iOS concept.** macOS has only
+  *Always*, so the call is a silent no-op — no prompt, no callback, status
+  stays `notDetermined`. `requestAlwaysAuthorization()` is the one.
+
+The symptom of both is identical and gives you nothing: a twelve-second timeout
+and no prompt. `LocationError.timedOut` carries the authorisation state for
+exactly this reason, and it is what eventually made the cause visible. If it
+ever goes quiet again, check `locationd` and `tccd` in `log show` **first** —
+if neither has seen the request, the problem is upstream of permissions and no
+amount of staring at the code will show it.
+
+The original chain of evidence follows.
 
 - Location Services is **on** globally, and the app's status is
   `notDetermined` — reported by the tool itself in the audit log, which is why
