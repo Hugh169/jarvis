@@ -191,6 +191,9 @@ public enum ToolPresentation {
         "web_search": .init(title: "Searching the web", bundleIdentifier: nil, symbolName: "globe"),
         "remember": .init(title: "Committing that to memory", bundleIdentifier: nil, symbolName: "brain"),
         "recall": .init(title: "Recalling what I know", bundleIdentifier: nil, symbolName: "brain"),
+        // Its own entry so the confirmation window reads "Forgetting something"
+        // rather than falling back to a humanised tool name.
+        "forget": .init(title: "Forgetting something", bundleIdentifier: nil, symbolName: "brain"),
         "display_detail": .init(title: "Putting details on screen", bundleIdentifier: nil, symbolName: "rectangle.on.rectangle"),
     ]
 
